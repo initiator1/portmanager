@@ -68,6 +68,16 @@ def test_doctor_json_returns_structured_error_codes(tmp_path: Path, capsys, monk
     assert payload["errors"][0]["code"] == "unmanaged_binding"
 
 
+def test_completions_print_shell_scripts(capsys) -> None:
+    assert main(["completions", "bash"]) == 0
+    bash_output = capsys.readouterr().out
+    assert "complete -F _portmanager portmanager" in bash_output
+
+    assert main(["completions", "zsh"]) == 0
+    zsh_output = capsys.readouterr().out
+    assert "#compdef portmanager" in zsh_output
+
+
 def test_adopt_dry_run_reports_existing_binding_without_mutation(tmp_path: Path, capsys, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     project = workspace / "demo"

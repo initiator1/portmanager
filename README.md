@@ -92,6 +92,13 @@ portmanager guardrails install --dry-run
 portmanager guardrails install
 ```
 
+Print shell completions:
+
+```bash
+portmanager completions bash
+portmanager completions zsh
+```
+
 ## Registry Lookup
 
 Portmanager resolves the registry in this order:

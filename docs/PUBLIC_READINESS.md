@@ -23,10 +23,10 @@ personal workstation.
 - Added scanner coverage for `[tool.portmanager.services]`, Makefile, and
   Procfile declarations.
 - Added registry file locking around mutating CLI commands.
+- Added bash and zsh completion script generation.
 
 ## Remaining Before Public Release
 
-- Decide on the first public distribution channel.
+- Confirm package-name availability on PyPI before first upload.
 - Add scanner support for more frameworks.
-- Add shell completions.
 - Decide whether to publish to PyPI, Homebrew, or both.

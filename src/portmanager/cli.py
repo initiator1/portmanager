@@ -8,6 +8,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from .completions import completion_script
 from .config import REGISTRY_FILE_NAME, registry_lock, resolve_registry_path
 from .guardrails import install_guardrails, planned_guardrail_targets
 from .models import RootEntry
@@ -106,6 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
     guardrails_subparsers = guardrails_parser.add_subparsers(dest="guardrails_command", required=True)
     guardrails_install = guardrails_subparsers.add_parser("install", help="Install guardrail blocks")
     guardrails_install.add_argument("--dry-run", action="store_true")
+
+    completions_parser = subparsers.add_parser("completions", help="Print shell completion script")
+    completions_parser.add_argument("shell", choices=["bash", "zsh"])
 
     return parser
 
@@ -437,6 +441,11 @@ def cmd_guardrails_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_completions(args: argparse.Namespace) -> int:
+    print(completion_script(args.shell), end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -466,6 +475,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_roots_list(args)
     if args.command == "guardrails":
         return cmd_guardrails_install(args)
+    if args.command == "completions":
+        return cmd_completions(args)
     parser.error(f"unsupported command: {args.command}")
     return 2
 

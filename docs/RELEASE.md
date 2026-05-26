@@ -35,7 +35,14 @@ The scan should produce no private paths or credentials.
 3. Commit the version bump.
 4. Tag the release after CI passes.
 
-## Publish
+## Distribution Channel
 
-No publishing target is configured yet. Decide whether the first public channel
-is PyPI, Homebrew, GitHub Releases, or a combination.
+Recommended initial channel:
+
+1. Publish source and wheel artifacts to GitHub Releases.
+2. Publish to PyPI once the name is available and the README renders cleanly.
+3. Add Homebrew only after the CLI has a few external users; maintaining a tap
+   before that adds release overhead without much benefit.
+
+Do not publish until CI passes on the release commit and the privacy scan is
+clean.
