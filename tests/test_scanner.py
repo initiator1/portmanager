@@ -14,8 +14,10 @@ def test_discover_project_ports_handles_env_wired_configs_and_references(tmp_pat
         json.dumps(
             {
                 "scripts": {
-                    "dev": "next dev --port ${PM_PORT_WEB:-5200}",
+                    "dev": "next dev -p ${PM_PORT_WEB:-5200}",
                     "dev:api": "python3 -m uvicorn app.main:app --reload --port ${PM_PORT_API:-5201}",
+                    "dev:astro": "astro dev --host 127.0.0.1 --port ${PM_PORT_ASTRO:-5204}",
+                    "dev:expo": "expo start --web --port ${PM_PORT_EXPO:-5205}",
                 }
             }
         )
@@ -57,6 +59,8 @@ def test_discover_project_ports_handles_env_wired_configs_and_references(tmp_pat
     assert (5201, "api", "binding") in bindings
     assert (5202, "web", "binding") in bindings
     assert (5203, "api", "binding") in bindings
+    assert (5204, "astro-web", "binding") in bindings
+    assert (5205, "expo-web", "binding") in bindings
     assert (5212, "api", "binding") in bindings
     assert (587, "email_smtp", "reference") in references
     assert (993, "email_imap", "reference") in references
@@ -220,8 +224,28 @@ def test_discover_project_ports_reads_pyproject_makefile_and_procfile(tmp_path: 
             ]
         )
     )
-    (project / "Makefile").write_text("serve:\n\tpython -m http.server ${PM_PORT_STATIC:-5221}\n")
-    (project / "Procfile").write_text("api: uvicorn app.main:app --port ${PM_PORT_API:-5222}\n")
+    (project / "Makefile").write_text(
+        "\n".join(
+            [
+                "serve:",
+                "\tpython -m http.server ${PM_PORT_STATIC:-5221}",
+                "flask:",
+                "\tflask run --port ${PM_PORT_API:-5223}",
+                "django:",
+                "\tpython manage.py runserver 127.0.0.1:5224",
+                "",
+            ]
+        )
+    )
+    (project / "Procfile").write_text(
+        "\n".join(
+            [
+                "api: uvicorn app.main:app --port ${PM_PORT_API:-5222}",
+                "web: rails server -p 5225",
+                "",
+            ]
+        )
+    )
 
     ports = discover_project_ports(project)
 
@@ -229,3 +253,29 @@ def test_discover_project_ports_reads_pyproject_makefile_and_procfile(tmp_path: 
     assert (5220, "admin", "web") in bindings
     assert (5221, "web", "web") in bindings
     assert (5222, "api", "api") in bindings
+    assert (5223, "api", "api") in bindings
+    assert (5224, "api", "api") in bindings
+    assert (5225, "api", "api") in bindings
+
+
+def test_discover_project_ports_reads_python_server_literals(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    api = project / "api"
+    api.mkdir(parents=True)
+    (api / "main.py").write_text(
+        "\n".join(
+            [
+                "from fastapi import FastAPI",
+                "import uvicorn",
+                "app = FastAPI()",
+                "if __name__ == '__main__':",
+                "    uvicorn.run(app, host='127.0.0.1', port=5226)",
+                "",
+            ]
+        )
+    )
+
+    ports = discover_project_ports(project)
+
+    bindings = {(item.port, item.service, item.kind) for item in ports if item.role == "binding"}
+    assert (5226, "api", "api") in bindings

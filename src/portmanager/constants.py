@@ -46,6 +46,9 @@ SCAN_FILE_NAMES = {
     "pyproject.toml",
     "Makefile",
     "Procfile",
+    "app.py",
+    "main.py",
+    "server.py",
 }
 
 MANAGED_BLOCK_START = "<!-- PORTMANAGER:START -->"

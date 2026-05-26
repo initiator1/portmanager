@@ -20,14 +20,16 @@ personal workstation.
 - Added GitHub Actions CI for Python 3.11, 3.12, and 3.13.
 - Added a release checklist and demo workspace.
 - Added structured `doctor --json` validation errors for agent integrations.
-- Added scanner coverage for `[tool.portmanager.services]`, Makefile, and
-  Procfile declarations.
+- Added scanner coverage for `[tool.portmanager.services]`, Makefile, Procfile,
+  common Node/Python dev-server commands, and simple Python server entry
+  points.
 - Added registry file locking around mutating CLI commands.
 - Added bash and zsh completion script generation.
 - Added a tag-driven GitHub release workflow for built artifacts.
 
-## Remaining Before Public Release
+## Remaining Before External Publication
 
 - Confirm package-name availability on PyPI immediately before first upload.
-- Add scanner support for more frameworks.
-- Decide whether to publish to PyPI, Homebrew, or both.
+- Create and push the GitHub repository.
+- Decide whether the first external publication includes PyPI or only GitHub
+  Releases.

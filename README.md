@@ -116,12 +116,14 @@ Portmanager resolves the registry in this order:
 
 The scanner currently understands common local port declarations in:
 
-- `package.json` scripts for Vite, Next.js, and Uvicorn
+- `package.json` scripts for Vite, Next.js, Astro, Expo, Uvicorn, Flask,
+  Django, Rails, Streamlit, and `python -m http.server`
 - `vite.config.ts` and `vite.config.js`
 - Docker Compose files
 - `pyproject.toml` declarations under `[tool.portmanager.services.<name>]`
-- `Makefile` and `Procfile` commands for Uvicorn, Streamlit, and
-  `python -m http.server`
+- `Makefile` and `Procfile` commands for the same common dev servers
+- `app.py`, `main.py`, and `server.py` literals for simple Python server entry
+  points
 - `.env`, `.env.local`, `.env.development`, and `.env.example`
 
 It classifies owned host-bound listeners as bindings and reports integration

@@ -13,11 +13,20 @@ from .models import DiscoveredPort, Registry
 
 PORT_KEY_RE = re.compile(r"(?P<key>[A-Z0-9_]+)\s*=\s*(?P<value>.+)")
 URL_PORT_RE = re.compile(r"(?P<scheme>[a-z]+)://(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(?P<port>\d{2,5})", re.IGNORECASE)
-NEXT_PORT_RE = re.compile(r"next\s+dev\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+NEXT_PORT_RE = re.compile(r"next\s+dev\b[^\n]*?(?:--port|-p)(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 VITE_SCRIPT_PORT_RE = re.compile(r"\bvite(?:\s+\w+)?\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 UVICORN_PORT_RE = re.compile(r"uvicorn\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 STREAMLIT_PORT_RE = re.compile(r"streamlit\s+run\b[^\n]*?--server\.port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 PYTHON_HTTP_PORT_RE = re.compile(r"python(?:3)?\s+-m\s+http\.server\s+(?P<value>\$\{[^}]+\}|\d{2,5})")
+ASTRO_PORT_RE = re.compile(r"astro\s+(?:dev|preview)\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+EXPO_PORT_RE = re.compile(r"expo\s+start\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+RAILS_PORT_RE = re.compile(r"rails\s+(?:server|s)\b[^\n]*?(?:--port|-p)(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+DJANGO_RUNSERVER_PORT_RE = re.compile(r"(?:manage\.py|django-admin)\s+runserver\s+(?:(?:localhost|127\.0\.0\.1|0\.0\.0\.0):)?(?P<value>\$\{[^}]+\}|\d{2,5})")
+FLASK_RUN_PORT_RE = re.compile(r"flask\s+run\b[^\n]*?(?:--port|-p)(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+PYTHON_LITERAL_PORT_RE = re.compile(
+    r"(?:app\.run|uvicorn\.run|HTTPServer|socketserver\.TCPServer)\s*\([\s\S]{0,240}?\bport\s*=\s*(?P<port>\d{2,5})",
+    re.MULTILINE,
+)
 ENV_FALLBACK_PORT_RE = re.compile(r"\$\{[A-Z0-9_]+(?::-|-)(?P<port>\d{2,5})\}")
 JS_ENV_PORT_ASSIGN_RE = re.compile(
     r"(?:const|let|var)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*Number\(\s*process\.env\.(?P<env>[A-Z0-9_]+)\s*(?:\?\?|\|\|)\s*(?P<port>\d{2,5})\s*\)"
@@ -58,6 +67,7 @@ CANONICAL_BINDING_SERVICE_ALIASES = {
     "timescaledb": "db",
 }
 CANONICAL_BINDING_BASES = {"frontend", "web", "gui", "desktop", "api", "db", "redis", "monitor", "worker"}
+FRAMEWORK_VARIANT_TOKENS = {"astro", "expo", "streamlit", "flask", "django", "rails", "static"}
 ALIAS_ONLY_SCRIPT_TOKENS = {"dev", "preview", "start", "serve"}
 ENV_REFERENCE_TOKENS = {"smtp", "imap", "pop", "mail", "oauth", "callback", "llm", "lmstudio", "ollama"}
 ENV_FILE_PRIORITY = {
@@ -67,6 +77,18 @@ ENV_FILE_PRIORITY = {
     ".env.example": 3,
 }
 GOVERNING_SERVICE_STATUSES = {"active", "external"}
+COMMAND_BINDING_PATTERNS = (
+    (NEXT_PORT_RE, "web", "web", "next dev command"),
+    (VITE_SCRIPT_PORT_RE, "web", "web", "vite command"),
+    (ASTRO_PORT_RE, "web", "web", "astro command"),
+    (EXPO_PORT_RE, "web", "web", "expo command"),
+    (UVICORN_PORT_RE, "api", "api", "uvicorn command"),
+    (FLASK_RUN_PORT_RE, "api", "api", "flask command"),
+    (DJANGO_RUNSERVER_PORT_RE, "api", "api", "django runserver command"),
+    (RAILS_PORT_RE, "api", "api", "rails command"),
+    (STREAMLIT_PORT_RE, "web", "web", "streamlit command"),
+    (PYTHON_HTTP_PORT_RE, "web", "web", "python http.server command"),
+)
 
 
 def _is_ignored(path: Path) -> bool:
@@ -187,6 +209,9 @@ def _canonical_binding_service_name(project_root: Path, path: Path, service: str
         return lowered
 
     base = canonical_tokens[-1]
+    framework_variant = next((token for token in tokens if token in FRAMEWORK_VARIANT_TOKENS), None)
+    if framework_variant and base in {"web", "api"}:
+        return f"{framework_variant}-{base}"
     if variant and base in {"frontend", "web", "gui", "desktop", "api"}:
         return f"{variant}-{base}"
     return base
@@ -231,26 +256,23 @@ def _discover_package_json(project_root: Path, path: Path) -> list[DiscoveredPor
     scripts = payload.get("scripts", {})
     base_service = _guess_service_name(path.relative_to(project_root), "app")
     for script_name, command in scripts.items():
-        for pattern, service_name, kind in (
-            (NEXT_PORT_RE, "web", "web"),
-            (VITE_SCRIPT_PORT_RE, base_service if base_service != "app" else "web", "web"),
-            (UVICORN_PORT_RE, "api", "api"),
-        ):
+        for pattern, service_name, kind, detail in COMMAND_BINDING_PATTERNS:
             match = pattern.search(command)
             if not match:
                 continue
             port = _extract_port_value(match.group("value"))
             if port is None:
                 continue
+            service = base_service if pattern == VITE_SCRIPT_PORT_RE and base_service != "app" else service_name
             items.append(
                 DiscoveredPort(
                     project=str(project_root),
                     source_file=str(path),
                     port=port,
                     role="binding",
-                    service=service_name if script_name == "dev" else f"{service_name}-{script_name.replace(':', '-')}",
+                    service=service if script_name == "dev" else f"{service}-{script_name.replace(':', '-')}",
                     kind=kind,
-                    detail=f"package.json script {script_name}",
+                    detail=f"package.json script {script_name}: {detail}",
                 )
             )
     return items
@@ -292,26 +314,42 @@ def _discover_command_file(project_root: Path, path: Path) -> list[DiscoveredPor
     text = path.read_text(errors="ignore")
     service = _guess_service_name(path.relative_to(project_root), "web")
     items: list[DiscoveredPort] = []
-    for pattern, service_name, kind, detail in (
-        (UVICORN_PORT_RE, "api", "api", "uvicorn command"),
-        (STREAMLIT_PORT_RE, service if service != "app" else "web", "web", "streamlit command"),
-        (PYTHON_HTTP_PORT_RE, service if service != "app" else "web", "web", "python http.server command"),
-    ):
+    for pattern, service_name, kind, detail in COMMAND_BINDING_PATTERNS:
         for match in pattern.finditer(text):
             port = _extract_port_value(match.group("value"))
             if port is None:
                 continue
+            discovered_service = service if pattern in {VITE_SCRIPT_PORT_RE, STREAMLIT_PORT_RE, PYTHON_HTTP_PORT_RE} and service != "app" else service_name
             items.append(
                 DiscoveredPort(
                     project=str(project_root),
                     source_file=str(path),
                     port=port,
                     role="binding",
-                    service=service_name,
+                    service=discovered_service,
                     kind=kind,
                     detail=detail,
                 )
             )
+    return items
+
+
+def _discover_python_source(project_root: Path, path: Path) -> list[DiscoveredPort]:
+    text = path.read_text(errors="ignore")
+    service = _guess_service_name(path.relative_to(project_root), "api")
+    items: list[DiscoveredPort] = []
+    for match in PYTHON_LITERAL_PORT_RE.finditer(text):
+        items.append(
+            DiscoveredPort(
+                project=str(project_root),
+                source_file=str(path),
+                port=int(match.group("port")),
+                role="binding",
+                service=service if service != "app" else "api",
+                kind="api",
+                detail=f"{path.name} server port literal",
+            )
+        )
     return items
 
 
@@ -515,6 +553,8 @@ def discover_source_ports(project_root: Path, path: Path) -> list[DiscoveredPort
         return _discover_env(project_root, path)
     if path.name in {"Makefile", "Procfile"}:
         return _discover_command_file(project_root, path)
+    if path.name in {"app.py", "main.py", "server.py"}:
+        return _discover_python_source(project_root, path)
     return []
 
 
