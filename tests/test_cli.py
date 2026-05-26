@@ -34,6 +34,22 @@ def test_claim_dry_run_does_not_create_registry(tmp_path: Path, capsys, monkeypa
     assert not registry_path.exists()
 
 
+def test_scan_without_existing_registry_uses_current_directory(tmp_path: Path, capsys, monkeypatch) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"scripts": {"dev": "vite --port 5190"}}))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PORTMANAGER_HOME", str(tmp_path / "missing-config"))
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    result = main(["scan"])
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert str(project) in output
+    assert "unmanaged" in output
+
+
 def test_adopt_dry_run_reports_existing_binding_without_mutation(tmp_path: Path, capsys, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     project = workspace / "demo"

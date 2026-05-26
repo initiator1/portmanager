@@ -37,7 +37,7 @@ def default_registry(root: Path | None = None) -> Registry:
 def load_registry(path: Path | str | None = None) -> Registry:
     registry_path = resolve_registry_path(path)
     if not registry_path.exists():
-        return default_registry(registry_path.parent)
+        return default_registry(Path.cwd())
     data = tomllib.loads(registry_path.read_text())
     return Registry(
         version=int(data.get("version", 1)),
