@@ -112,6 +112,9 @@ The scanner currently understands common local port declarations in:
 - `package.json` scripts for Vite, Next.js, and Uvicorn
 - `vite.config.ts` and `vite.config.js`
 - Docker Compose files
+- `pyproject.toml` declarations under `[tool.portmanager.services.<name>]`
+- `Makefile` and `Procfile` commands for Uvicorn, Streamlit, and
+  `python -m http.server`
 - `.env`, `.env.local`, `.env.development`, and `.env.example`
 
 It classifies owned host-bound listeners as bindings and reports integration
@@ -141,3 +144,20 @@ portmanager doctor --all
 `doctor` fails on unmanaged app-owned bindings, duplicate registry ports,
 out-of-range active assignments, missing source files, and source drift in
 supported config types.
+
+Use `doctor --json` when another tool or agent needs stable error codes:
+
+```json
+{
+  "ok": false,
+  "errors": [
+    {
+      "code": "unmanaged_binding",
+      "message": "unmanaged binding in ...",
+      "project": "/path/to/project",
+      "service": "web",
+      "port": 5190
+    }
+  ]
+}
+```

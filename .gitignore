@@ -10,6 +10,7 @@ dist/
 
 # Local registry state can reveal private project names and filesystem paths.
 ports.toml
+ports.toml.lock
 ports.lock.json
 PORTS.md
 *-next-to-do.md

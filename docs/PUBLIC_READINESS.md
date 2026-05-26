@@ -17,14 +17,16 @@ personal workstation.
 - Added license, contribution, privacy, and quickstart documentation.
 - Added atomic writes for registry, generated reports, sync files, and
   guardrail files.
+- Added GitHub Actions CI for Python 3.11, 3.12, and 3.13.
+- Added a release checklist and demo workspace.
+- Added structured `doctor --json` validation errors for agent integrations.
+- Added scanner coverage for `[tool.portmanager.services]`, Makefile, and
+  Procfile declarations.
+- Added registry file locking around mutating CLI commands.
 
 ## Remaining Before Public Release
 
-- Add CI for tests and package build checks.
-- Add a release checklist and version bump process.
-- Add richer scanner support for more frameworks.
-- Add structured error codes for CLI and agent integrations.
-- Add file locking for concurrent registry mutation.
+- Decide on the first public distribution channel.
+- Add scanner support for more frameworks.
 - Add shell completions.
-- Add a demo fixture workspace and terminal walkthrough.
 - Decide whether to publish to PyPI, Homebrew, or both.

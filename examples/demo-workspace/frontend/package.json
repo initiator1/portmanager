@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port ${PM_PORT_WEB:-5190}"
+  },
+  "dependencies": {
+    "vite": "^6.0.0"
+  }
+}
+

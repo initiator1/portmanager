@@ -8,7 +8,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .config import REGISTRY_FILE_NAME, resolve_registry_path
+from .config import REGISTRY_FILE_NAME, registry_lock, resolve_registry_path
 from .guardrails import install_guardrails, planned_guardrail_targets
 from .models import RootEntry
 from .registry import (
@@ -138,16 +138,17 @@ def cmd_init(args: argparse.Namespace) -> int:
         for root in roots:
             print(f"root {root}")
         return 0
-    if registry_path.exists() and not args.force:
-        print(f"ERROR: registry already exists: {registry_path}", file=sys.stderr)
-        return 1
     roots = [Path(path).expanduser().resolve() for path in args.root] if args.root else [Path.cwd().resolve()]
-    registry = default_registry(roots[0])
-    registry.roots = [RootEntry(str(root)) for root in roots]
-    registry.managed_range_start = args.range_start
-    registry.managed_range_end = args.range_end
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        if registry_path.exists() and not args.force:
+            print(f"ERROR: registry already exists: {registry_path}", file=sys.stderr)
+            return 1
+        registry = default_registry(roots[0])
+        registry.roots = [RootEntry(str(root)) for root in roots]
+        registry.managed_range_start = args.range_start
+        registry.managed_range_end = args.range_end
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(registry_path)
     return 0
 
@@ -185,146 +186,151 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_claim(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    project = resolve_project_argument(registry, args.project)
-    listeners = load_listeners()
-    port = args.port or next_free_port(registry, listeners)
-    if args.dry_run:
-        print(f"would claim {port} for {project}:{args.service}")
-        return 0
-    upsert_service(
-        registry,
-        project=project,
-        service_name=args.service,
-        kind=args.kind,
-        port=port,
-        bind_host=args.bind_host,
-        source_file=args.source_file,
-        notes=args.notes,
-    )
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        project = resolve_project_argument(registry, args.project)
+        listeners = load_listeners()
+        port = args.port or next_free_port(registry, listeners)
+        if args.dry_run:
+            print(f"would claim {port} for {project}:{args.service}")
+            return 0
+        upsert_service(
+            registry,
+            project=project,
+            service_name=args.service,
+            kind=args.kind,
+            port=port,
+            bind_host=args.bind_host,
+            source_file=args.source_file,
+            notes=args.notes,
+        )
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(f"claimed {port} for {project}:{args.service}")
     return 0
 
 
 def cmd_release(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    project = resolve_project_argument(registry, args.project)
-    service = registry.service_for(project, args.service)
-    if service is None:
-        print(f"ERROR: no service named {args.service} for {project}", file=sys.stderr)
-        return 1
-    if args.dry_run:
-        print(f"would retire {project}:{args.service}")
-        return 0
-    service.status = "retired"
-    service.notes = args.notes
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        project = resolve_project_argument(registry, args.project)
+        service = registry.service_for(project, args.service)
+        if service is None:
+            print(f"ERROR: no service named {args.service} for {project}", file=sys.stderr)
+            return 1
+        if args.dry_run:
+            print(f"would retire {project}:{args.service}")
+            return 0
+        service.status = "retired"
+        service.notes = args.notes
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(f"retired {project}:{args.service}")
     return 0
 
 
 def cmd_rename_service(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    project = resolve_project_argument(registry, args.project)
-    service = registry.service_for(project, args.old_service)
-    if service is None:
-        print(f"ERROR: no service named {args.old_service} for {project}", file=sys.stderr)
-        return 1
-    if registry.service_for(project, args.new_service) is not None:
-        print(f"ERROR: service already exists: {project}:{args.new_service}", file=sys.stderr)
-        return 1
-    if args.dry_run:
-        print(f"would rename {project}:{args.old_service} to {args.new_service}")
-        return 0
-    service.service = args.new_service
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        project = resolve_project_argument(registry, args.project)
+        service = registry.service_for(project, args.old_service)
+        if service is None:
+            print(f"ERROR: no service named {args.old_service} for {project}", file=sys.stderr)
+            return 1
+        if registry.service_for(project, args.new_service) is not None:
+            print(f"ERROR: service already exists: {project}:{args.new_service}", file=sys.stderr)
+            return 1
+        if args.dry_run:
+            print(f"would rename {project}:{args.old_service} to {args.new_service}")
+            return 0
+        service.service = args.new_service
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(f"renamed {project}:{args.old_service} to {args.new_service}")
     return 0
 
 
 def cmd_move_project(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    old_project = resolve_project_argument(registry, args.old_project)
-    new_project = Path(args.new_project).expanduser().resolve()
-    changed = 0
-    for project in registry.projects:
-        if project.path_obj == old_project:
-            project.path = str(new_project)
-            changed += 1
-    for service in registry.services:
-        if service.project_path == old_project:
-            service.project = str(new_project)
-            changed += 1
-    if changed == 0:
-        print(f"ERROR: no registry entries found for {old_project}", file=sys.stderr)
-        return 1
-    if args.dry_run:
-        print(f"would move {changed} entries from {old_project} to {new_project}")
-        return 0
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        old_project = resolve_project_argument(registry, args.old_project)
+        new_project = Path(args.new_project).expanduser().resolve()
+        changed = 0
+        for project in registry.projects:
+            if project.path_obj == old_project:
+                project.path = str(new_project)
+                changed += 1
+        for service in registry.services:
+            if service.project_path == old_project:
+                service.project = str(new_project)
+                changed += 1
+        if changed == 0:
+            print(f"ERROR: no registry entries found for {old_project}", file=sys.stderr)
+            return 1
+        if args.dry_run:
+            print(f"would move {changed} entries from {old_project} to {new_project}")
+            return 0
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(f"moved {changed} entries from {old_project} to {new_project}")
     return 0
 
 
 def cmd_adopt(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    project = resolve_project_argument(registry, args.project)
-    assigned = {service.port for service in registry.services_for_project(project) if service.status in {"active", "external"}}
-    active_ports = registry.active_ports()
-    candidates: list[dict[str, object]] = []
-    for item in discover_project_ports(project, registry):
-        if item.role != "binding" or item.port in assigned:
-            continue
-        status = "active" if registry.managed_range_start <= item.port <= registry.managed_range_end else "external"
-        candidates.append(
-            {
-                "project": str(project),
-                "service": item.service,
-                "kind": item.kind,
-                "port": item.port,
-                "bind_host": item.bind_host,
-                "source_file": _display_source(project, item.source_file),
-                "status": status,
-                "conflict": item.port in active_ports,
-            }
-        )
-    if args.as_json:
-        print(json.dumps({"project": str(project), "candidates": candidates}, indent=2, sort_keys=True))
-    else:
-        if not candidates:
-            print("no unmanaged bindings found")
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        project = resolve_project_argument(registry, args.project)
+        assigned = {service.port for service in registry.services_for_project(project) if service.status in {"active", "external"}}
+        active_ports = registry.active_ports()
+        candidates: list[dict[str, object]] = []
+        for item in discover_project_ports(project, registry):
+            if item.role != "binding" or item.port in assigned:
+                continue
+            status = "active" if registry.managed_range_start <= item.port <= registry.managed_range_end else "external"
+            candidates.append(
+                {
+                    "project": str(project),
+                    "service": item.service,
+                    "kind": item.kind,
+                    "port": item.port,
+                    "bind_host": item.bind_host,
+                    "source_file": _display_source(project, item.source_file),
+                    "status": status,
+                    "conflict": item.port in active_ports,
+                }
+            )
+        if args.as_json:
+            print(json.dumps({"project": str(project), "candidates": candidates}, indent=2, sort_keys=True))
+        else:
+            if not candidates:
+                print("no unmanaged bindings found")
+            for candidate in candidates:
+                action = "would adopt" if args.dry_run else "adopted"
+                conflict = " conflict" if candidate["conflict"] else ""
+                print(f"{action} {candidate['port']} {candidate['service']} [{candidate['status']}]{conflict}")
+        if args.dry_run or not candidates:
+            return 0
+        if any(candidate["conflict"] for candidate in candidates):
+            print("ERROR: refusing to adopt bindings with active registry port conflicts", file=sys.stderr)
+            return 1
         for candidate in candidates:
-            action = "would adopt" if args.dry_run else "adopted"
-            conflict = " conflict" if candidate["conflict"] else ""
-            print(f"{action} {candidate['port']} {candidate['service']} [{candidate['status']}]{conflict}")
-    if args.dry_run or not candidates:
-        return 0
-    if any(candidate["conflict"] for candidate in candidates):
-        print("ERROR: refusing to adopt bindings with active registry port conflicts", file=sys.stderr)
-        return 1
-    for candidate in candidates:
-        upsert_service(
-            registry,
-            project=project,
-            service_name=str(candidate["service"]),
-            kind=str(candidate["kind"]),
-            port=int(candidate["port"]),
-            bind_host=str(candidate["bind_host"]),
-            source_file=str(candidate["source_file"]),
-            status=str(candidate["status"]),
-            notes="Adopted from existing local config.",
-        )
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+            upsert_service(
+                registry,
+                project=project,
+                service_name=str(candidate["service"]),
+                kind=str(candidate["kind"]),
+                port=int(candidate["port"]),
+                bind_host=str(candidate["bind_host"]),
+                source_file=str(candidate["source_file"]),
+                status=str(candidate["status"]),
+                notes="Adopted from existing local config.",
+            )
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     return 0
 
 
@@ -348,7 +354,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     project = None if args.all or not args.project else resolve_project_argument(registry, args.project)
     errors = validate_registry(registry, project_filter=project)
     if args.as_json:
-        print(json.dumps({"ok": not errors, "errors": errors}, indent=2))
+        print(json.dumps({"ok": not errors, "errors": [error.to_dict() for error in errors]}, indent=2))
     else:
         if errors:
             for error in errors:
@@ -392,15 +398,16 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_roots_add(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
-    registry = load_registry(registry_path)
-    new_root = Path(args.path).expanduser().resolve()
-    if args.dry_run:
-        print(f"would add root {new_root}")
-        return 0
-    if all(root.path_obj != new_root for root in registry.roots):
-        registry.roots.append(RootEntry(str(new_root)))
-    write_registry(registry, registry_path)
-    write_generated_artifacts(registry, registry_path)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        new_root = Path(args.path).expanduser().resolve()
+        if args.dry_run:
+            print(f"would add root {new_root}")
+            return 0
+        if all(root.path_obj != new_root for root in registry.roots):
+            registry.roots.append(RootEntry(str(new_root)))
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
     print(new_root)
     return 0
 

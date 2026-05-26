@@ -17,7 +17,7 @@ from .constants import (
     MANAGED_RANGE_END,
     MANAGED_RANGE_START,
 )
-from .models import DiscoveredPort, Listener, ProjectEntry, Registry, RootEntry, ServiceEntry
+from .models import DiscoveredPort, Listener, ProjectEntry, Registry, RootEntry, ServiceEntry, ValidationError
 from .scanner import discover_all, discover_source_ports
 
 GOVERNING_SERVICE_STATUSES = {"active", "external"}
@@ -421,10 +421,10 @@ def _source_file_matches_service(service: ServiceEntry) -> bool:
     return env_marker in text or str(service.port) in text
 
 
-def validate_registry(registry: Registry, project_filter: Path | None = None) -> list[str]:
+def validate_registry(registry: Registry, project_filter: Path | None = None) -> list[ValidationError]:
     listeners = load_listeners()
     discoveries = discover_all(registry)
-    errors: list[str] = []
+    errors: list[ValidationError] = []
 
     seen_ports: dict[int, ServiceEntry] = {}
     for service in sorted(registry.services, key=lambda item: (item.project, item.port, item.service)):
@@ -434,27 +434,65 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
             continue
         if service.status == "active":
             if not registry.managed_range_start <= service.port <= registry.managed_range_end:
-                errors.append(f"{service.project}:{service.service} uses out-of-range port {service.port}")
+                errors.append(
+                    ValidationError(
+                        code="out_of_range_port",
+                        message=f"{service.project}:{service.service} uses out-of-range port {service.port}",
+                        project=service.project,
+                        service=service.service,
+                        port=service.port,
+                    )
+                )
             prior = seen_ports.get(service.port)
             if prior is not None:
                 errors.append(
-                    f"duplicate active registry port {service.port}: {prior.project}:{prior.service} and {service.project}:{service.service}"
+                    ValidationError(
+                        code="duplicate_port",
+                        message=f"duplicate active registry port {service.port}: {prior.project}:{prior.service} and {service.project}:{service.service}",
+                        project=service.project,
+                        service=service.service,
+                        port=service.port,
+                    )
                 )
             else:
                 seen_ports[service.port] = service
             if service.port in listeners:
                 processes = ", ".join(sorted({listener.process for listener in listeners[service.port]}))
-                errors.append(f"assigned port {service.port} for {service.project}:{service.service} is already listening ({processes})")
+                errors.append(
+                    ValidationError(
+                        code="port_in_use",
+                        message=f"assigned port {service.port} for {service.project}:{service.service} is already listening ({processes})",
+                        project=service.project,
+                        service=service.service,
+                        port=service.port,
+                    )
+                )
 
         if service.source_file:
             source_path = service.source_path
             if source_path is None:
                 continue
             if not source_path.exists():
-                errors.append(f"missing source file for {service.project}:{service.service}: {service.source_file}")
+                errors.append(
+                    ValidationError(
+                        code="missing_source_file",
+                        message=f"missing source file for {service.project}:{service.service}: {service.source_file}",
+                        project=service.project,
+                        service=service.service,
+                        port=service.port,
+                        source_file=service.source_file,
+                    )
+                )
             elif not _source_file_matches_service(service):
                 errors.append(
-                    f"source file drift for {service.project}:{service.service}: expected managed binding for port {service.port} in {service.source_file}"
+                    ValidationError(
+                        code="source_drift",
+                        message=f"source file drift for {service.project}:{service.service}: expected managed binding for port {service.port} in {service.source_file}",
+                        project=service.project,
+                        service=service.service,
+                        port=service.port,
+                        source_file=service.source_file,
+                    )
                 )
 
     for project_path, ports in discoveries.items():
@@ -468,6 +506,13 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                 continue
             if item.port not in assigned:
                 errors.append(
-                    f"unmanaged binding in {project_path}: port {item.port} from {item.source_file} ({item.service}) is not represented in ports.toml"
+                    ValidationError(
+                        code="unmanaged_binding",
+                        message=f"unmanaged binding in {project_path}: port {item.port} from {item.source_file} ({item.service}) is not represented in ports.toml",
+                        project=str(project_path),
+                        service=item.service,
+                        port=item.port,
+                        source_file=item.source_file,
+                    )
                 )
     return errors

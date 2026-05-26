@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -15,6 +16,8 @@ URL_PORT_RE = re.compile(r"(?P<scheme>[a-z]+)://(?:localhost|127\.0\.0\.1|0\.0\.
 NEXT_PORT_RE = re.compile(r"next\s+dev\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 VITE_SCRIPT_PORT_RE = re.compile(r"\bvite(?:\s+\w+)?\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
 UVICORN_PORT_RE = re.compile(r"uvicorn\b[^\n]*?--port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+STREAMLIT_PORT_RE = re.compile(r"streamlit\s+run\b[^\n]*?--server\.port(?:=|\s+)(?P<value>\$\{[^}]+\}|\d{2,5})")
+PYTHON_HTTP_PORT_RE = re.compile(r"python(?:3)?\s+-m\s+http\.server\s+(?P<value>\$\{[^}]+\}|\d{2,5})")
 ENV_FALLBACK_PORT_RE = re.compile(r"\$\{[A-Z0-9_]+(?::-|-)(?P<port>\d{2,5})\}")
 JS_ENV_PORT_ASSIGN_RE = re.compile(
     r"(?:const|let|var)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*Number\(\s*process\.env\.(?P<env>[A-Z0-9_]+)\s*(?:\?\?|\|\|)\s*(?P<port>\d{2,5})\s*\)"
@@ -253,6 +256,65 @@ def _discover_package_json(project_root: Path, path: Path) -> list[DiscoveredPor
     return items
 
 
+def _discover_pyproject(project_root: Path, path: Path) -> list[DiscoveredPort]:
+    try:
+        payload = tomllib.loads(path.read_text())
+    except tomllib.TOMLDecodeError:
+        return []
+    services = payload.get("tool", {}).get("portmanager", {}).get("services", {})
+    if not isinstance(services, dict):
+        return []
+    items: list[DiscoveredPort] = []
+    for service_name, service_config in services.items():
+        if not isinstance(service_config, dict):
+            continue
+        port = service_config.get("port")
+        if not isinstance(port, int):
+            continue
+        kind = service_config.get("kind")
+        service = str(service_name)
+        items.append(
+            DiscoveredPort(
+                project=str(project_root),
+                source_file=str(path),
+                port=port,
+                role="binding",
+                service=service,
+                kind=str(kind) if isinstance(kind, str) else _kind_for_service(service),
+                detail=f"tool.portmanager.services.{service}",
+                bind_host=str(service_config.get("bind_host", "127.0.0.1")),
+            )
+        )
+    return items
+
+
+def _discover_command_file(project_root: Path, path: Path) -> list[DiscoveredPort]:
+    text = path.read_text(errors="ignore")
+    service = _guess_service_name(path.relative_to(project_root), "web")
+    items: list[DiscoveredPort] = []
+    for pattern, service_name, kind, detail in (
+        (UVICORN_PORT_RE, "api", "api", "uvicorn command"),
+        (STREAMLIT_PORT_RE, service if service != "app" else "web", "web", "streamlit command"),
+        (PYTHON_HTTP_PORT_RE, service if service != "app" else "web", "web", "python http.server command"),
+    ):
+        for match in pattern.finditer(text):
+            port = _extract_port_value(match.group("value"))
+            if port is None:
+                continue
+            items.append(
+                DiscoveredPort(
+                    project=str(project_root),
+                    source_file=str(path),
+                    port=port,
+                    role="binding",
+                    service=service_name,
+                    kind=kind,
+                    detail=detail,
+                )
+            )
+    return items
+
+
 def _discover_vite_config(project_root: Path, path: Path) -> list[DiscoveredPort]:
     text = path.read_text(errors="ignore")
     variable_ports = {
@@ -443,12 +505,16 @@ def _discover_env(project_root: Path, path: Path) -> list[DiscoveredPort]:
 def discover_source_ports(project_root: Path, path: Path) -> list[DiscoveredPort]:
     if path.name == "package.json":
         return _discover_package_json(project_root, path)
+    if path.name == "pyproject.toml":
+        return _discover_pyproject(project_root, path)
     if path.name.startswith("vite.config"):
         return _discover_vite_config(project_root, path)
     if path.name in {"docker-compose.yml", "docker-compose.yaml", "compose.yaml"}:
         return _discover_compose(project_root, path)
     if path.name.startswith(".env"):
         return _discover_env(project_root, path)
+    if path.name in {"Makefile", "Procfile"}:
+        return _discover_command_file(project_root, path)
     return []
 
 
@@ -488,7 +554,7 @@ def discover_project_ports(project_root: Path, registry: Registry | None = None)
                 canonical_service, canonical_kind, preferred_source = registry_binding
             else:
                 canonical_service = _canonical_binding_service_name(project_root, Path(item.source_file), item.service, item.kind)
-                canonical_kind = _kind_for_service(canonical_service)
+                canonical_kind = item.kind if item.detail.startswith("tool.portmanager.") else _kind_for_service(canonical_service)
                 preferred_source = ""
             key = (item.role, canonical_service, canonical_kind, item.port, item.bind_host)
             existing = unique.get(key)

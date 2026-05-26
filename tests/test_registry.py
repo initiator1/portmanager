@@ -292,7 +292,7 @@ def test_validate_registry_rejects_stale_literal_with_matching_number_elsewhere(
 
     errors = registry_module.validate_registry(registry)
 
-    assert any("source file drift" in error for error in errors)
+    assert any(error.code == "source_drift" and "source file drift" in error.message for error in errors)
 
 
 def test_validate_registry_ignores_reference_only_ports(tmp_path: Path, monkeypatch) -> None:

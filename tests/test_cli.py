@@ -50,6 +50,24 @@ def test_scan_without_existing_registry_uses_current_directory(tmp_path: Path, c
     assert "unmanaged" in output
 
 
+def test_doctor_json_returns_structured_error_codes(tmp_path: Path, capsys, monkeypatch) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    registry_path = tmp_path / "ports.toml"
+    (project / "package.json").write_text(json.dumps({"scripts": {"dev": "vite --port 5190"}}))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init"]) == 0
+    capsys.readouterr()
+    result = main(["--registry", str(registry_path), "doctor", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 1
+    assert payload["ok"] is False
+    assert payload["errors"][0]["code"] == "unmanaged_binding"
+
+
 def test_adopt_dry_run_reports_existing_binding_without_mutation(tmp_path: Path, capsys, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     project = workspace / "demo"

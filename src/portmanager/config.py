@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import tempfile
 from pathlib import Path
+from typing import Iterator
 
 REGISTRY_FILE_NAME = "ports.toml"
 LOCK_FILE_NAME = "ports.lock.json"
@@ -57,3 +60,15 @@ def write_text_atomic(path: Path, text: str) -> None:
         handle.write(text)
         temp_path = Path(handle.name)
     temp_path.replace(path)
+
+
+@contextlib.contextmanager
+def registry_lock(registry_path: Path) -> Iterator[None]:
+    lock_path = registry_path.expanduser().resolve().with_suffix(f"{registry_path.suffix}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

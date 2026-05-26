@@ -204,3 +204,28 @@ def test_discover_project_ports_finds_conditional_hmr_port(tmp_path: Path) -> No
     bindings = {(item.port, item.service, item.kind) for item in ports if item.role == "binding"}
     assert (5210, "web", "web") in bindings
     assert (5211, "web-hmr", "other") in bindings
+
+
+def test_discover_project_ports_reads_pyproject_makefile_and_procfile(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.portmanager.services.admin]",
+                'kind = "web"',
+                "port = 5220",
+                'bind_host = "127.0.0.1"',
+                "",
+            ]
+        )
+    )
+    (project / "Makefile").write_text("serve:\n\tpython -m http.server ${PM_PORT_STATIC:-5221}\n")
+    (project / "Procfile").write_text("api: uvicorn app.main:app --port ${PM_PORT_API:-5222}\n")
+
+    ports = discover_project_ports(project)
+
+    bindings = {(item.port, item.service, item.kind) for item in ports if item.role == "binding"}
+    assert (5220, "admin", "web") in bindings
+    assert (5221, "web", "web") in bindings
+    assert (5222, "api", "api") in bindings

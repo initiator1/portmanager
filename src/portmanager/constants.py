@@ -44,6 +44,8 @@ SCAN_FILE_NAMES = {
     ".env.local",
     ".env.development",
     "pyproject.toml",
+    "Makefile",
+    "Procfile",
 }
 
 MANAGED_BLOCK_START = "<!-- PORTMANAGER:START -->"

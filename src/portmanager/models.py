@@ -125,3 +125,19 @@ class Listener:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+@dataclass(slots=True)
+class ValidationError:
+    code: str
+    message: str
+    project: str = ""
+    service: str = ""
+    port: int | None = None
+    source_file: str = ""
+
+    def __str__(self) -> str:
+        return self.message
+
+    def to_dict(self) -> dict[str, object]:
+        return {key: value for key, value in asdict(self).items() if value not in {"", None}}
