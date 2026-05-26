@@ -46,3 +46,15 @@ Recommended initial channel:
 
 Do not publish until CI passes on the release commit and the privacy scan is
 clean.
+
+## GitHub Release
+
+Tag pushes matching `v*` build the package, run tests, and create a GitHub
+release with the artifacts from `dist/`.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Do not create a tag until the release commit is already pushed and CI is green.

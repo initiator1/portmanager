@@ -24,9 +24,10 @@ personal workstation.
   Procfile declarations.
 - Added registry file locking around mutating CLI commands.
 - Added bash and zsh completion script generation.
+- Added a tag-driven GitHub release workflow for built artifacts.
 
 ## Remaining Before Public Release
 
-- Confirm package-name availability on PyPI before first upload.
+- Confirm package-name availability on PyPI immediately before first upload.
 - Add scanner support for more frameworks.
 - Decide whether to publish to PyPI, Homebrew, or both.
