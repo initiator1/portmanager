@@ -1,11 +1,17 @@
-.DS_Store
-__pycache__/
+.portmanager/
 .pytest_cache/
 .ruff_cache/
-.venv/
-*.pyc
-dist/
-build/
 .mypy_cache/
-.coverage
-htmlcov/
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+
+# Local registry state can reveal private project names and filesystem paths.
+ports.toml
+ports.lock.json
+PORTS.md
+*-next-to-do.md
+!examples/
+!examples/ports.toml

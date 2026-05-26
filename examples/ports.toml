@@ -1,0 +1,17 @@
+version = 1
+managed_range_start = 5190
+managed_range_end = 5299
+roots = [
+    { path = "/Users/example/Projects" },
+]
+
+[[services]]
+project = "/Users/example/Projects/demo-web"
+status = "active"
+service = "web"
+kind = "web"
+port = 5190
+bind_host = "127.0.0.1"
+source_file = "vite.config.ts"
+notes = "Example Vite app."
+
