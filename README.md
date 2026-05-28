@@ -143,6 +143,18 @@ roots. The command updates only the managed block between:
 
 Use `--dry-run` to preview target files before writing.
 
+Supported instruction targets:
+
+| Surface | Home-level target | Workspace/project target |
+| --- | --- | --- |
+| Codex | `~/.codex/AGENTS.md` | `AGENTS.md` |
+| Claude | `~/.claude/CLAUDE.md` | `CLAUDE.md` |
+| Gemini | `~/.gemini/GEMINI.md` | `GEMINI.md` |
+| Antigravity | `~/.gemini/antigravity/global_workflows/portmanager_policy.md` | n/a |
+
+Workspace and project targets are discovered from the active registry roots and
+active or external project entries.
+
 ## Validation
 
 ```bash
