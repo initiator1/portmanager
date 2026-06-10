@@ -5,6 +5,11 @@ many coding agents. It gives a workspace one registry, generates per-project
 environment files, and installs optional guardrail instructions so agents claim
 ports instead of inventing new localhost defaults.
 
+The guardrail installer can add managed policy blocks to agent instruction
+files such as `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. It only writes between
+`<!-- PORTMANAGER:START -->` and `<!-- PORTMANAGER:END -->`, so existing human
+instructions stay intact.
+
 ## Why
 
 Local apps tend to drift toward the same ports: `3000`, `5173`, `8000`, `5432`.
@@ -92,6 +97,15 @@ portmanager guardrails install --dry-run
 portmanager guardrails install
 ```
 
+The dry run prints every instruction file Portmanager would touch before it
+writes anything. Typical targets include:
+
+- `~/.codex/AGENTS.md` and workspace/project `AGENTS.md` files for Codex.
+- `~/.claude/CLAUDE.md` and workspace/project `CLAUDE.md` files for Claude.
+- `~/.gemini/GEMINI.md` for Gemini.
+- `~/.gemini/antigravity/global_workflows/portmanager_policy.md` for
+  Antigravity.
+
 Print shell completions:
 
 ```bash
@@ -106,8 +120,11 @@ Portmanager resolves the registry in this order:
 1. `--registry /path/to/ports.toml`
 2. `PORTMANAGER_REGISTRY`
 3. the nearest `ports.toml` in the current directory or an ancestor
-4. the user config path under `PORTMANAGER_HOME` or `XDG_CONFIG_HOME`
-5. `~/.config/portmanager/ports.toml`
+4. the path written in `<user config dir>/registry-path` (a one-line pointer file pinning a canonical registry so claims resolve correctly from any working directory)
+5. the user config path under `PORTMANAGER_HOME` or `XDG_CONFIG_HOME`
+6. `~/.config/portmanager/ports.toml`
+
+`claim` refuses to run against a registry file that does not exist, refuses projects outside the registry's roots, and refuses an explicit `--port` already registered to a different project. Auto-assign skips ports registered to any active or external service, ports with live TCP listeners, and ports that fail a bind probe.
 
 `portmanager init` creates `ports.toml` in the current directory unless
 `--registry` is supplied.
