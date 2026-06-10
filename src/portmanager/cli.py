@@ -15,9 +15,11 @@ from .models import RootEntry
 from .registry import (
     build_scan_payload,
     default_registry,
+    governing_service_for_port,
     load_listeners,
     load_registry,
     next_free_port,
+    project_in_registry_scope,
     resolve_project_argument,
     upsert_service,
     validate_registry,
@@ -190,13 +192,41 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_claim(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
+    if not registry_path.exists():
+        print(
+            f"ERROR: registry not found: {registry_path}\n"
+            "Refusing to create a new registry implicitly. Pass --registry, set "
+            "PORTMANAGER_REGISTRY, or run `portmanager init` deliberately.",
+            file=sys.stderr,
+        )
+        return 1
     with registry_lock(registry_path):
         registry = load_registry(registry_path)
         project = resolve_project_argument(registry, args.project)
+        if not project_in_registry_scope(registry, project):
+            roots = ", ".join(root.path for root in registry.roots) or "(none)"
+            print(
+                f"ERROR: {project} is not under any root of registry {registry_path} (roots: {roots}).\n"
+                "This usually means the wrong ports.toml was resolved from your working directory. "
+                "Pass --registry /path/to/ports.toml or set PORTMANAGER_REGISTRY.",
+                file=sys.stderr,
+            )
+            return 1
         listeners = load_listeners()
-        port = args.port or next_free_port(registry, listeners)
+        if args.port:
+            owner = governing_service_for_port(registry, args.port)
+            if owner is not None and owner.project_path != project:
+                print(
+                    f"ERROR: port {args.port} is already registered to {owner.project}:{owner.service} "
+                    f"(status {owner.status}); refusing to reassign it to {project}:{args.service}.",
+                    file=sys.stderr,
+                )
+                return 1
+            port = args.port
+        else:
+            port = next_free_port(registry, listeners)
         if args.dry_run:
-            print(f"would claim {port} for {project}:{args.service}")
+            print(f"would claim {port} for {project}:{args.service} in {registry_path}")
             return 0
         upsert_service(
             registry,
@@ -209,8 +239,12 @@ def cmd_claim(args: argparse.Namespace) -> int:
             notes=args.notes,
         )
         write_registry(registry, registry_path)
+        persisted = load_registry(registry_path).service_for(project, args.service)
+        if persisted is None or persisted.port != port:
+            print(f"ERROR: claim did not persist to {registry_path}; registry unchanged on disk", file=sys.stderr)
+            return 1
         write_generated_artifacts(registry, registry_path)
-    print(f"claimed {port} for {project}:{args.service}")
+    print(f"claimed {port} for {project}:{args.service} in {registry_path}")
     return 0
 
 

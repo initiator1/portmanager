@@ -26,6 +26,16 @@ def user_registry_path() -> Path:
     return user_config_dir() / REGISTRY_FILE_NAME
 
 
+def pinned_registry_path() -> Path | None:
+    pointer = user_config_dir() / "registry-path"
+    if not pointer.exists():
+        return None
+    text = pointer.read_text(encoding="utf-8").strip()
+    if not text:
+        return None
+    return Path(text).expanduser().resolve()
+
+
 def find_nearest_registry(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).expanduser().resolve()
     if current.is_file():
@@ -43,7 +53,7 @@ def resolve_registry_path(value: str | Path | None = None, *, require_existing: 
     elif os.environ.get("PORTMANAGER_REGISTRY"):
         path = Path(os.environ["PORTMANAGER_REGISTRY"]).expanduser().resolve()
     else:
-        path = find_nearest_registry() or user_registry_path()
+        path = find_nearest_registry() or pinned_registry_path() or user_registry_path()
     if require_existing and not path.exists():
         raise FileNotFoundError(f"registry not found: {path}")
     return path

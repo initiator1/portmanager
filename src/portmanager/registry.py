@@ -110,10 +110,44 @@ def resolve_project_argument(registry: Registry, value: str) -> Path:
     return (Path.cwd() / raw_path).resolve()
 
 
+def governing_service_for_port(registry: Registry, port: int) -> ServiceEntry | None:
+    for service in registry.services:
+        if service.port == port and service.status in GOVERNING_SERVICE_STATUSES:
+            return service
+    return None
+
+
+def project_in_registry_scope(registry: Registry, project: Path) -> bool:
+    resolved = project.expanduser().resolve()
+    for root in registry.roots:
+        root_path = root.path_obj
+        if resolved == root_path or root_path in resolved.parents:
+            return True
+    if any(entry.path_obj == resolved for entry in registry.projects):
+        return True
+    return any(service.project_path == resolved for service in registry.services)
+
+
+def governed_ports(registry: Registry) -> set[int]:
+    return {service.port for service in registry.services if service.status in GOVERNING_SERVICE_STATUSES}
+
+
+def port_is_bindable(port: int, host: str = DEFAULT_BIND_HOST) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
 def next_free_port(registry: Registry, listeners: dict[int, list[Listener]]) -> int:
-    active_ports = registry.active_ports()
+    reserved_ports = governed_ports(registry)
     for port in range(registry.managed_range_start, registry.managed_range_end + 1):
-        if port in active_ports or port in listeners:
+        if port in reserved_ports or port in listeners:
+            continue
+        if not port_is_bindable(port):
             continue
         return port
     raise RuntimeError("No free managed ports remain in the configured range")
@@ -169,14 +203,37 @@ def load_listeners() -> dict[int, list[Listener]]:
         if len(parts) < 9:
             continue
         name = parts[0]
-        endpoint = parts[-1]
-        if ":" not in endpoint:
+        # The NAME column is parts[8] (e.g. "127.0.0.1:5249"); lsof appends a
+        # separate "(LISTEN)" token, so parts[-1] is NOT the endpoint.
+        port = None
+        for token in parts[8:]:
+            tail = token.rsplit(":", 1)[-1]
+            if ":" in token and tail.isdigit():
+                port = int(tail)
+                break
+        if port is None:
             continue
-        port_text = endpoint.rsplit(":", 1)[-1]
-        if not port_text.isdigit():
-            continue
-        listeners[int(port_text)].append(Listener(port=int(port_text), process=name, raw=line))
+        pid = int(parts[1]) if parts[1].isdigit() else None
+        listeners[port].append(Listener(port=port, process=name, raw=line, pid=pid))
     return listeners
+
+
+def _pid_cwd(pid: int) -> Path | None:
+    result = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, capture_output=True, text=True)
+    for line in result.stdout.splitlines():
+        if line.startswith("n"):
+            return Path(line[1:])
+    return None
+
+
+def _listener_belongs_to_project(listener: Listener, project_path: Path) -> bool:
+    if listener.pid is None:
+        return False
+    cwd = _pid_cwd(listener.pid)
+    if cwd is None:
+        return False
+    resolved = project_path.expanduser().resolve()
+    return cwd == resolved or resolved in cwd.parents
 
 
 def generate_project_env(registry: Registry, project_path: Path) -> str:
@@ -456,12 +513,17 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                 )
             else:
                 seen_ports[service.port] = service
-            if service.port in listeners:
-                processes = ", ".join(sorted({listener.process for listener in listeners[service.port]}))
+            foreign = [
+                listener
+                for listener in listeners.get(service.port, [])
+                if not _listener_belongs_to_project(listener, service.project_path)
+            ]
+            if foreign:
+                processes = ", ".join(sorted({listener.process for listener in foreign}))
                 errors.append(
                     ValidationError(
                         code="port_in_use",
-                        message=f"assigned port {service.port} for {service.project}:{service.service} is already listening ({processes})",
+                        message=f"assigned port {service.port} for {service.project}:{service.service} is in use by a foreign process ({processes})",
                         project=service.project,
                         service=service.service,
                         port=service.port,

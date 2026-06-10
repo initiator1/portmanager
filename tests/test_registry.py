@@ -8,7 +8,8 @@ from portmanager.models import Listener, Registry, RootEntry, ServiceEntry
 from portmanager.registry import build_scan_payload, next_free_port, write_project_sync_files
 
 
-def test_next_free_port_skips_assigned_and_listeners() -> None:
+def test_next_free_port_skips_assigned_and_listeners(monkeypatch) -> None:
+    monkeypatch.setattr(registry_module, "port_is_bindable", lambda port, host="127.0.0.1": True)
     registry = Registry(
         managed_range_start=5190,
         managed_range_end=5195,
@@ -26,6 +27,40 @@ def test_next_free_port_skips_assigned_and_listeners() -> None:
     listeners = {5191: [Listener(port=5191, process="python", raw="python ...")]}
 
     assert next_free_port(registry, listeners) == 5192
+
+
+def test_next_free_port_skips_external_services_and_unbindable_ports(monkeypatch) -> None:
+    registry = Registry(
+        managed_range_start=5190,
+        managed_range_end=5195,
+        services=[
+            ServiceEntry(project="/tmp/a", status="active", service="web", kind="web", port=5190, bind_host="127.0.0.1"),
+            ServiceEntry(project="/tmp/b", status="external", service="api", kind="api", port=5191, bind_host="127.0.0.1"),
+            ServiceEntry(project="/tmp/c", status="retired", service="old", kind="web", port=5192, bind_host="127.0.0.1"),
+        ],
+    )
+    monkeypatch.setattr(registry_module, "port_is_bindable", lambda port, host="127.0.0.1": port != 5192)
+
+    # 5190 active, 5191 external (still governs), 5192 retired but fails the bind probe
+    assert next_free_port(registry, {}) == 5193
+
+
+def test_load_listeners_parses_lsof_listen_lines(monkeypatch) -> None:
+    lsof_output = (
+        "COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\n"
+        "python3.1   789  dev    5u  IPv4  0xcd6be9963ad7b04      0t0  TCP 127.0.0.1:5249 (LISTEN)\n"
+        "node       1234  dev   23u  IPv6  0xdeadbeef             0t0  TCP *:5195 (LISTEN)\n"
+    )
+
+    class FakeResult:
+        stdout = lsof_output
+
+    monkeypatch.setattr(registry_module.subprocess, "run", lambda *args, **kwargs: FakeResult())
+    listeners = registry_module.load_listeners()
+
+    assert set(listeners) == {5249, 5195}
+    assert listeners[5249][0].process == "python3.1"
+    assert listeners[5195][0].process == "node"
 
 
 def test_write_project_sync_files_generates_env_and_json(tmp_path: Path) -> None:
@@ -115,6 +150,29 @@ def test_build_scan_payload_classifies_projects_and_reports_registry_only_servic
     assert active_info["registered_only_services"][0]["service"] == "monitor"
     assert archived_info["classification"] == "archived"
     assert idle_info["classification"] == "non_app"
+
+
+def test_validate_registry_flags_foreign_listener_but_not_own_service(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+
+    registry = Registry(
+        roots=[RootEntry(str(workspace))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="web", kind="web", port=5200, bind_host="127.0.0.1"),
+            ServiceEntry(project=str(project), status="active", service="api", kind="api", port=5201, bind_host="127.0.0.1"),
+        ],
+    )
+    own = Listener(port=5200, process="node", raw="...", pid=111)
+    foreign = Listener(port=5201, process="python", raw="...", pid=222)
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5200: [own], 5201: [foreign]})
+    monkeypatch.setattr(registry_module, "_pid_cwd", lambda pid: project if pid == 111 else Path("/somewhere/else"))
+
+    errors = registry_module.validate_registry(registry)
+
+    assert [error.code for error in errors] == ["port_in_use"]
+    assert errors[0].port == 5201
 
 
 def test_validate_registry_accepts_parser_aware_managed_binding(tmp_path: Path, monkeypatch) -> None:
