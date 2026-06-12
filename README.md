@@ -183,6 +183,13 @@ portmanager doctor --all
 out-of-range active assignments, missing source files, and source drift in
 supported config types.
 
+Listeners are attributed to projects by process working directory. Docker
+Desktop port proxies are attributed via the owning container's
+`com.docker.compose.project.working_dir` label, so a project's own
+compose containers do not trigger `port_in_use`. Containers without a
+compose working-dir label (plain `docker run`) remain unattributable and
+are still flagged.
+
 Use `doctor --json` when another tool or agent needs stable error codes:
 
 ```json

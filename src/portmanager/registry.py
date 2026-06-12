@@ -218,6 +218,69 @@ def load_listeners() -> dict[int, list[Listener]]:
     return listeners
 
 
+def _docker_port_working_dirs() -> dict[int, set[Path]]:
+    try:
+        ps_result = subprocess.run(["docker", "ps", "-q"], check=False, capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    if ps_result.returncode != 0:
+        return {}
+    container_ids = ps_result.stdout.split()
+    if not container_ids:
+        return {}
+
+    try:
+        inspect_result = subprocess.run(["docker", "inspect", *container_ids], check=False, capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    if inspect_result.returncode != 0:
+        return {}
+
+    try:
+        containers = json.loads(inspect_result.stdout)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(containers, list):
+        return {}
+
+    ports: dict[int, set[Path]] = defaultdict(set)
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        config = container.get("Config")
+        if not isinstance(config, dict):
+            continue
+        labels = config.get("Labels")
+        if not isinstance(labels, dict):
+            continue
+        working_dir = labels.get("com.docker.compose.project.working_dir")
+        if not isinstance(working_dir, str) or not working_dir:
+            continue
+        try:
+            resolved_working_dir = Path(working_dir).expanduser().resolve()
+        except (OSError, RuntimeError):
+            continue
+
+        network_settings = container.get("NetworkSettings")
+        if not isinstance(network_settings, dict):
+            continue
+        published_ports = network_settings.get("Ports")
+        if not isinstance(published_ports, dict):
+            continue
+        for entries in published_ports.values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    host_port = int(entry.get("HostPort"))
+                except (TypeError, ValueError):
+                    continue
+                ports[host_port].add(resolved_working_dir)
+    return dict(ports)
+
+
 def _pid_cwd(pid: int) -> Path | None:
     result = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, capture_output=True, text=True)
     for line in result.stdout.splitlines():
@@ -234,6 +297,11 @@ def _listener_belongs_to_project(listener: Listener, project_path: Path) -> bool
         return False
     resolved = project_path.expanduser().resolve()
     return cwd == resolved or resolved in cwd.parents
+
+
+def _docker_listener_belongs_to_project(docker_ports: dict[int, set[Path]], port: int, project_path: Path) -> bool:
+    resolved = project_path.expanduser().resolve()
+    return any(working_dir == resolved or resolved in working_dir.parents for working_dir in docker_ports.get(port, set()))
 
 
 def generate_project_env(registry: Registry, project_path: Path) -> str:
@@ -482,6 +550,7 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
     listeners = load_listeners()
     discoveries = discover_all(registry)
     errors: list[ValidationError] = []
+    docker_ports: dict[int, set[Path]] | None = None
 
     seen_ports: dict[int, ServiceEntry] = {}
     for service in sorted(registry.services, key=lambda item: (item.project, item.port, item.service)):
@@ -513,11 +582,16 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                 )
             else:
                 seen_ports[service.port] = service
-            foreign = [
-                listener
-                for listener in listeners.get(service.port, [])
-                if not _listener_belongs_to_project(listener, service.project_path)
-            ]
+            foreign: list[Listener] = []
+            for listener in listeners.get(service.port, []):
+                if _listener_belongs_to_project(listener, service.project_path):
+                    continue
+                if listener.process.lower().startswith(("com.docke", "docker", "vpnkit")):
+                    if docker_ports is None:
+                        docker_ports = _docker_port_working_dirs()
+                    if _docker_listener_belongs_to_project(docker_ports, service.port, service.project_path):
+                        continue
+                foreign.append(listener)
             if foreign:
                 processes = ", ".join(sorted({listener.process for listener in foreign}))
                 errors.append(

@@ -175,6 +175,97 @@ def test_validate_registry_flags_foreign_listener_but_not_own_service(tmp_path: 
     assert errors[0].port == 5201
 
 
+def test_validate_registry_attributes_docker_listener_to_service_project(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    listener = Listener(port=5213, process="com.docke", raw="...")
+
+    registry = Registry(
+        roots=[RootEntry(str(workspace))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="db", kind="db", port=5213, bind_host="127.0.0.1")
+        ],
+    )
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5213: [listener]})
+    monkeypatch.setattr(registry_module, "_docker_port_working_dirs", lambda: {5213: {project.resolve()}})
+
+    errors = registry_module.validate_registry(registry)
+
+    assert not any(error.code == "port_in_use" for error in errors)
+
+
+def test_validate_registry_flags_unattributed_docker_listener(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    other_project = workspace / "other"
+    project.mkdir(parents=True)
+    other_project.mkdir()
+    listener = Listener(port=5213, process="com.docke", raw="...")
+
+    registry = Registry(
+        roots=[RootEntry(str(workspace))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="db", kind="db", port=5213, bind_host="127.0.0.1")
+        ],
+    )
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5213: [listener]})
+    monkeypatch.setattr(registry_module, "_docker_port_working_dirs", lambda: {5213: {other_project.resolve()}})
+
+    errors = registry_module.validate_registry(registry)
+
+    assert [error.code for error in errors] == ["port_in_use"]
+    assert errors[0].port == 5213
+
+
+def test_validate_registry_flags_docker_listener_when_docker_map_empty(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    listener = Listener(port=5213, process="com.docke", raw="...")
+
+    registry = Registry(
+        roots=[RootEntry(str(workspace))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="db", kind="db", port=5213, bind_host="127.0.0.1")
+        ],
+    )
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5213: [listener]})
+    monkeypatch.setattr(registry_module, "_docker_port_working_dirs", lambda: {})
+
+    errors = registry_module.validate_registry(registry)
+
+    assert [error.code for error in errors] == ["port_in_use"]
+    assert errors[0].port == 5213
+
+
+def test_validate_registry_does_not_query_docker_for_non_docker_listener(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    listener = Listener(port=5213, process="python", raw="...")
+    docker_calls: list[bool] = []
+
+    def docker_port_working_dirs() -> dict[int, set[Path]]:
+        docker_calls.append(True)
+        return {}
+
+    registry = Registry(
+        roots=[RootEntry(str(workspace))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="web", kind="web", port=5213, bind_host="127.0.0.1")
+        ],
+    )
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5213: [listener]})
+    monkeypatch.setattr(registry_module, "_docker_port_working_dirs", docker_port_working_dirs)
+
+    errors = registry_module.validate_registry(registry)
+
+    assert [error.code for error in errors] == ["port_in_use"]
+    assert errors[0].port == 5213
+    assert docker_calls == []
+
+
 def test_validate_registry_accepts_parser_aware_managed_binding(tmp_path: Path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     project = workspace / "demo"
