@@ -6,9 +6,11 @@ environment files, and installs optional guardrail instructions so agents claim
 ports instead of inventing new localhost defaults.
 
 The guardrail installer can add managed policy blocks to agent instruction
-files such as `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. It only writes between
-`<!-- PORTMANAGER:START -->` and `<!-- PORTMANAGER:END -->`, so existing human
-instructions stay intact.
+files such as `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. Home-level Claude
+policy uses a path-scoped rule at `~/.claude/rules/portmanager-ports.md` so it
+loads only for files that can bind development ports. Managed blocks only write
+between `<!-- PORTMANAGER:START -->` and `<!-- PORTMANAGER:END -->`, so existing
+human instructions stay intact.
 
 ## Why
 
@@ -101,7 +103,8 @@ The dry run prints every instruction file Portmanager would touch before it
 writes anything. Typical targets include:
 
 - `~/.codex/AGENTS.md` and workspace/project `AGENTS.md` files for Codex.
-- `~/.claude/CLAUDE.md` and workspace/project `CLAUDE.md` files for Claude.
+- `~/.claude/rules/portmanager-ports.md` and workspace/project `CLAUDE.md` files
+  for Claude.
 - `~/.gemini/GEMINI.md` for Gemini.
 - `~/.gemini/antigravity/global_workflows/portmanager_policy.md` for
   Antigravity.
@@ -124,7 +127,13 @@ Portmanager resolves the registry in this order:
 5. the user config path under `PORTMANAGER_HOME` or `XDG_CONFIG_HOME`
 6. `~/.config/portmanager/ports.toml`
 
-`claim` refuses to run against a registry file that does not exist, refuses projects outside the registry's roots, and refuses an explicit `--port` already registered to a different project. Auto-assign skips ports registered to any active or external service, ports with live TCP listeners, and ports that fail a bind probe.
+`claim` refuses to run against a registry file that does not exist or a project
+outside the registry's roots. Auto-assign skips ports registered to any active
+or external service, ports with live TCP listeners, and ports that fail a bind
+probe. Explicit `--port` claims require `--adopt-existing` and are reserved for
+pre-existing hardcoded bindings; prefer auto-assign for new bindings. Successful
+`claim` and `sync` commands run a project-scoped `doctor` automatically and exit
+non-zero on findings. `--no-doctor` is available for deliberate exceptional use.
 
 `portmanager init` creates `ports.toml` in the current directory unless
 `--registry` is supplied.
@@ -151,7 +160,9 @@ references.
 
 `portmanager guardrails install` writes managed policy blocks to supported
 agent instruction files in the user home directory and configured workspace
-roots. The command updates only the managed block between:
+roots. It also owns Claude's path-scoped home rule file, whose generated header
+warns that manual edits are overwritten. Marker-based targets update only the
+managed block between:
 
 ```md
 <!-- PORTMANAGER:START -->
@@ -165,7 +176,7 @@ Supported instruction targets:
 | Surface | Home-level target | Workspace/project target |
 | --- | --- | --- |
 | Codex | `~/.codex/AGENTS.md` | `AGENTS.md` |
-| Claude | `~/.claude/CLAUDE.md` | `CLAUDE.md` |
+| Claude | `~/.claude/rules/portmanager-ports.md` | `CLAUDE.md` |
 | Gemini | `~/.gemini/GEMINI.md` | `GEMINI.md` |
 | Antigravity | `~/.gemini/antigravity/global_workflows/portmanager_policy.md` | n/a |
 

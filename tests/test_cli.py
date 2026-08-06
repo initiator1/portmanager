@@ -63,9 +63,9 @@ def test_claim_refuses_explicit_port_registered_to_other_project(tmp_path: Path,
     monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
 
     assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
-    assert main(["--registry", str(registry_path), "claim", str(first), "web", "--kind", "web", "--port", "5195"]) == 0
+    assert main(["--registry", str(registry_path), "claim", str(first), "web", "--kind", "web", "--port", "5195", "--adopt-existing"]) == 0
     capsys.readouterr()
-    result = main(["--registry", str(registry_path), "claim", str(second), "web", "--kind", "web", "--port", "5195"])
+    result = main(["--registry", str(registry_path), "claim", str(second), "web", "--kind", "web", "--port", "5195", "--adopt-existing"])
 
     captured = capsys.readouterr()
     assert result == 1
@@ -86,7 +86,7 @@ def test_claim_auto_assign_skips_registered_live_and_unbindable_ports(tmp_path: 
     monkeypatch.setattr(registry_module, "port_is_bindable", lambda port, host="127.0.0.1": port != 5192)
 
     assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
-    assert main(["--registry", str(registry_path), "claim", str(first), "web", "--kind", "web", "--port", "5190"]) == 0
+    assert main(["--registry", str(registry_path), "claim", str(first), "web", "--kind", "web", "--port", "5190", "--adopt-existing"]) == 0
     capsys.readouterr()
     result = main(["--registry", str(registry_path), "claim", str(second), "web", "--kind", "web"])
 
@@ -168,7 +168,7 @@ def test_release_rename_and_move_project_update_registry(tmp_path: Path, capsys,
     monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
 
     assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
-    assert main(["--registry", str(registry_path), "claim", str(project), "web", "--kind", "web", "--port", "5190"]) == 0
+    assert main(["--registry", str(registry_path), "claim", str(project), "web", "--kind", "web", "--port", "5190", "--adopt-existing"]) == 0
     assert main(["--registry", str(registry_path), "rename-service", str(project), "web", "frontend"]) == 0
     assert main(["--registry", str(registry_path), "move-project", str(project), str(moved_project)]) == 0
     assert main(["--registry", str(registry_path), "release", str(moved_project), "frontend"]) == 0
@@ -178,3 +178,70 @@ def test_release_rename_and_move_project_update_registry(tmp_path: Path, capsys,
     assert f'project = "{moved_project}"' in text
     assert 'service = "frontend"' in text
     assert 'status = "retired"' in text
+
+
+def test_claim_requires_adopt_existing_for_explicit_port(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    before = registry_path.read_text()
+    capsys.readouterr()
+
+    result = main(["--registry", str(registry_path), "claim", str(project), "web", "--kind", "web", "--port", "5190"])
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "--port skips auto-assign conflict detection" in captured.err
+    assert registry_path.read_text() == before
+
+
+def test_claim_runs_doctor_unless_disabled(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    registry_path = tmp_path / "ports.toml"
+    (project / "package.json").write_text(json.dumps({"scripts": {"dev": "vite --port 5191"}}))
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    claim_args = [
+        "--registry",
+        str(registry_path),
+        "claim",
+        str(project),
+        "web",
+        "--kind",
+        "web",
+        "--port",
+        "5190",
+        "--adopt-existing",
+    ]
+    capsys.readouterr()
+
+    assert main(claim_args) == 1
+    assert "ERROR: unmanaged binding" in capsys.readouterr().out
+
+    assert main([*claim_args, "--no-doctor"]) == 0
+    assert "doctor:" not in capsys.readouterr().out
+
+
+def test_sync_runs_doctor_unless_disabled(tmp_path: Path, capsys, monkeypatch) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    registry_path = tmp_path / "ports.toml"
+    (project / "package.json").write_text(json.dumps({"scripts": {"dev": "vite --port 5190"}}))
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    capsys.readouterr()
+
+    sync_args = ["--registry", str(registry_path), "sync", str(project)]
+    assert main(sync_args) == 1
+    assert "ERROR: unmanaged binding" in capsys.readouterr().out
+
+    assert main([*sync_args, "--no-doctor"]) == 0
+    assert "doctor:" not in capsys.readouterr().out

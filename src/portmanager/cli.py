@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .completions import completion_script
 from .config import REGISTRY_FILE_NAME, registry_lock, resolve_registry_path
-from .guardrails import install_guardrails, planned_guardrail_targets
+from .guardrails import install_guardrails, legacy_block_removals, planned_guardrail_targets
 from .models import RootEntry
 from .registry import (
     build_scan_payload,
@@ -57,7 +57,17 @@ def build_parser() -> argparse.ArgumentParser:
     claim_parser.add_argument("project")
     claim_parser.add_argument("service")
     claim_parser.add_argument("--kind", required=True, choices=["web", "api", "db", "redis", "worker", "other"])
-    claim_parser.add_argument("--port", type=int)
+    claim_parser.add_argument(
+        "--port",
+        type=int,
+        help="Explicit pre-existing hardcoded port; auto-assign is preferred and --adopt-existing is required.",
+    )
+    claim_parser.add_argument(
+        "--adopt-existing",
+        action="store_true",
+        help="Allow --port when registering a pre-existing hardcoded port.",
+    )
+    claim_parser.add_argument("--no-doctor", action="store_true", help="Skip the automatic project doctor check.")
     claim_parser.add_argument("--source-file", default="")
     claim_parser.add_argument("--bind-host", default="127.0.0.1")
     claim_parser.add_argument("--notes", default="")
@@ -88,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser = subparsers.add_parser("sync", help="Generate .portmanager files for a project")
     sync_parser.add_argument("project")
     sync_parser.add_argument("--dry-run", action="store_true")
+    sync_parser.add_argument("--no-doctor", action="store_true", help="Skip the automatic project doctor check.")
 
     doctor_parser = subparsers.add_parser("doctor", help="Validate registry state and project drift")
     doctor_parser.add_argument("project", nargs="?")
@@ -200,6 +211,14 @@ def cmd_claim(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    if args.port is not None and not args.adopt_existing:
+        print(
+            "ERROR: --port skips auto-assign conflict detection and can steal another project's port.\n"
+            "Let auto-assign choose (drop --port), or, only when registering a pre-existing\n"
+            "hardcoded port, re-run with --adopt-existing.",
+            file=sys.stderr,
+        )
+        return 1
     with registry_lock(registry_path):
         registry = load_registry(registry_path)
         project = resolve_project_argument(registry, args.project)
@@ -213,7 +232,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
             )
             return 1
         listeners = load_listeners()
-        if args.port:
+        if args.port is not None:
             owner = governing_service_for_port(registry, args.port)
             if owner is not None and owner.project_path != project:
                 print(
@@ -245,7 +264,9 @@ def cmd_claim(args: argparse.Namespace) -> int:
             return 1
         write_generated_artifacts(registry, registry_path)
     print(f"claimed {port} for {project}:{args.service} in {registry_path}")
-    return 0
+    if args.no_doctor:
+        return 0
+    return _run_project_doctor(registry_path, project, applied=f"the claim of {port} for {args.service}")
 
 
 def cmd_release(args: argparse.Namespace) -> int:
@@ -384,7 +405,23 @@ def cmd_sync(args: argparse.Namespace) -> int:
     write_generated_artifacts(registry, registry_path)
     print(env_path)
     print(json_path)
-    return 0
+    if args.no_doctor:
+        return 0
+    return _run_project_doctor(registry_path, project)
+
+
+def _run_project_doctor(registry_path: Path, project: Path, *, applied: str = "") -> int:
+    registry = load_registry(registry_path)
+    errors = validate_registry(registry, project_filter=project)
+    if not errors:
+        print("doctor: ok")
+        return 0
+    print(f"doctor: {len(errors)} finding(s) for {project}")
+    if applied:
+        print(f"doctor: {applied} is already recorded; fix the findings below instead of re-running it")
+    for error in errors:
+        print(f"ERROR: {error}")
+    return 1
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -467,6 +504,8 @@ def cmd_guardrails_install(args: argparse.Namespace) -> int:
     if args.dry_run:
         for path in planned_guardrail_targets(registry):
             print(path)
+        for path in legacy_block_removals():
+            print(f"{path} (remove legacy managed block)")
         return 0
     touched = install_guardrails(registry)
     write_generated_artifacts(registry, registry_path)

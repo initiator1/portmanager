@@ -4,8 +4,28 @@ from pathlib import Path
 
 CODEX_HOME_GUARDRAIL_PATH = Path.home() / ".codex" / "AGENTS.md"
 CLAUDE_HOME_GUARDRAIL_PATH = Path.home() / ".claude" / "CLAUDE.md"
+CLAUDE_HOME_RULE_PATH = Path.home() / ".claude" / "rules" / "portmanager-ports.md"
 GEMINI_HOME_GUARDRAIL_PATH = Path.home() / ".gemini" / "GEMINI.md"
 ANTIGRAVITY_GLOBAL_WORKFLOW_PATH = Path.home() / ".gemini" / "antigravity" / "global_workflows" / "portmanager_policy.md"
+
+CLAUDE_RULE_PATH_GLOBS = (
+    "**/package.json",
+    "**/vite.config.*",
+    "**/next.config.*",
+    "**/docker-compose*.yml",
+    "**/docker-compose*.yaml",
+    "**/compose.yml",
+    "**/compose.yaml",
+    "**/pyproject.toml",
+    "**/Makefile",
+    "**/Procfile",
+    "**/app.py",
+    "**/main.py",
+    "**/server.py",
+    "**/.env",
+    "**/.env.*",
+    "**/.portmanager/*",
+)
 
 DEFAULT_BIND_HOST = "127.0.0.1"
 MANAGED_RANGE_START = 5190
