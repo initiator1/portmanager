@@ -18,7 +18,7 @@ from .constants import (
     MANAGED_RANGE_START,
 )
 from .models import DiscoveredPort, Listener, ProjectEntry, Registry, RootEntry, ServiceEntry, ValidationError
-from .scanner import discover_all, discover_source_ports
+from .scanner import discover_all, discover_project_ports, discover_source_ports
 
 GOVERNING_SERVICE_STATUSES = {"active", "external"}
 
@@ -546,9 +546,19 @@ def _source_file_matches_service(service: ServiceEntry) -> bool:
     return env_marker in text or str(service.port) in text
 
 
+def _discoveries_for(registry: Registry, project_filter: Path | None) -> dict[Path, list[DiscoveredPort]]:
+    """Scan only what the caller will read; a project-filtered doctor discarded the rest."""
+    if project_filter is None:
+        return discover_all(registry)
+    target = project_filter.resolve()
+    if target not in set(configured_project_paths(registry)):
+        return {}
+    return {target: discover_project_ports(target, registry)}
+
+
 def validate_registry(registry: Registry, project_filter: Path | None = None) -> list[ValidationError]:
     listeners = load_listeners()
-    discoveries = discover_all(registry)
+    discoveries = _discoveries_for(registry, project_filter)
     errors: list[ValidationError] = []
     docker_ports: dict[int, set[Path]] | None = None
 
