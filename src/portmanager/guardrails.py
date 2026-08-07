@@ -19,7 +19,8 @@ from .models import Registry
 
 def _policy_lines(registry: Registry) -> list[str]:
     root_lines = [f"`{root.path}`" for root in registry.roots]
-    project_lines = [f"`{project.path}`" for project in registry.projects if project.status in {"active", "external"}]
+    # `external` projects hold reservations only; they are not managed workspaces.
+    project_lines = [f"`{project.path}`" for project in registry.projects if project.status == "active"]
     scope = ", ".join(root_lines + project_lines)
     return [
         f"- Managed workspace scope: {scope}",
@@ -165,7 +166,8 @@ def _managed_block_targets(registry: Registry) -> list[tuple[Path, str]]:
             ]
         )
     for project in registry.projects:
-        if project.status not in {"active", "external"} or not project.path_obj.exists():
+        # Never write instruction files into a reservation-only external tree.
+        if project.status != "active" or not project.path_obj.exists():
             continue
         targets.extend(
             [

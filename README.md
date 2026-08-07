@@ -65,6 +65,35 @@ portmanager adopt /absolute/project/path --dry-run
 portmanager adopt /absolute/project/path
 ```
 
+When two discovered bindings share a service name — a `db` in `docker-compose.yml`
+and another in `deploy/compose/.env` — adopt suffixes both with their port
+(`db-5432`, `db-5433`) so neither is lost.
+
+Register a standalone project outside the configured discovery roots:
+
+```bash
+portmanager projects add /absolute/project/path
+portmanager projects add /absolute/external/path --status external
+portmanager projects list
+```
+
+An `external` project is reservation-only. Portmanager holds its ports so
+auto-assign never hands them out, but does not scan the tree, generate
+`.portmanager` files, or write guardrail instruction files into it. Use it for a
+port owned by something outside the managed workspaces; without it, such a port
+ends up filed under an unrelated project and every `doctor` run reports a
+conflict that is not real.
+
+Move a service between lifecycle states without releasing and re-claiming it:
+
+```bash
+portmanager set-status /absolute/project/path api external --notes "upstream default port"
+```
+
+`active` means portmanager assigned the port and validates it. `external` means
+the port is reserved but managed elsewhere, so range and conflict checks are
+skipped. `retired` returns the port to the pool.
+
 Claim a new managed port:
 
 ```bash
@@ -128,12 +157,13 @@ Portmanager resolves the registry in this order:
 6. `~/.config/portmanager/ports.toml`
 
 `claim` refuses to run against a registry file that does not exist or a project
-outside the registry's roots. Auto-assign skips ports registered to any active
-or external service, ports with live TCP listeners, and ports that fail a bind
-probe. Explicit `--port` claims require `--adopt-existing` and are reserved for
-pre-existing hardcoded bindings; prefer auto-assign for new bindings. Successful
-`claim` and `sync` commands run a project-scoped `doctor` automatically and exit
-non-zero on findings. `--no-doctor` is available for deliberate exceptional use.
+outside the registry's roots and explicit project entries. Auto-assign skips
+ports registered to any active or external service, ports with live TCP
+listeners, and ports that fail a bind probe. Explicit `--port` claims require
+`--adopt-existing` and are reserved for pre-existing hardcoded bindings; prefer
+auto-assign for new bindings. Successful `claim` and `sync` commands run a
+project-scoped `doctor` automatically and exit non-zero on findings.
+`--no-doctor` is available for deliberate exceptional use.
 
 `portmanager init` creates `ports.toml` in the current directory unless
 `--registry` is supplied.
@@ -194,12 +224,12 @@ portmanager doctor --all
 out-of-range active assignments, missing source files, and source drift in
 supported config types.
 
-Listeners are attributed to projects by process working directory. Docker
-Desktop port proxies are attributed via the owning container's
-`com.docker.compose.project.working_dir` label, so a project's own
-compose containers do not trigger `port_in_use`. Containers without a
-compose working-dir label (plain `docker run`) remain unattributable and
-are still flagged.
+Listeners are checked only when their bind address overlaps the registered
+service host, then attributed to projects by process working directory or
+absolute project paths in the process command line. Docker Desktop port proxies
+are attributed via the owning container's Compose working-directory label or
+bind-mount source paths, so project-owned Compose and plain `docker run`
+containers do not trigger `port_in_use`.
 
 Use `doctor --json` when another tool or agent needs stable error codes:
 

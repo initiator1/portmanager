@@ -50,6 +50,7 @@ def test_load_listeners_parses_lsof_listen_lines(monkeypatch) -> None:
         "COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\n"
         "python3.1   789  dev    5u  IPv4  0xcd6be9963ad7b04      0t0  TCP 127.0.0.1:5249 (LISTEN)\n"
         "node       1234  dev   23u  IPv6  0xdeadbeef             0t0  TCP *:5195 (LISTEN)\n"
+        "IPNExtens  2256  dev   31u  IPv6  0xfeedface             0t0  TCP [fd7a:115c:a1e0::1]:5208 (LISTEN)\n"
     )
 
     class FakeResult:
@@ -58,9 +59,21 @@ def test_load_listeners_parses_lsof_listen_lines(monkeypatch) -> None:
     monkeypatch.setattr(registry_module.subprocess, "run", lambda *args, **kwargs: FakeResult())
     listeners = registry_module.load_listeners()
 
-    assert set(listeners) == {5249, 5195}
+    assert set(listeners) == {5249, 5195, 5208}
     assert listeners[5249][0].process == "python3.1"
+    assert listeners[5249][0].bind_address == "127.0.0.1"
     assert listeners[5195][0].process == "node"
+    assert listeners[5195][0].bind_address == "*"
+    assert listeners[5208][0].bind_address == "fd7a:115c:a1e0::1"
+
+
+def test_addresses_overlap_handles_wildcards_loopback_and_distinct_addresses() -> None:
+    assert registry_module._addresses_overlap("*", "127.0.0.1")
+    assert registry_module._addresses_overlap("127.0.0.1", "0.0.0.0")
+    assert registry_module._addresses_overlap("127.0.0.1", "127.0.0.1")
+    assert registry_module._addresses_overlap("localhost", "127.0.0.1")
+    assert registry_module._addresses_overlap("::1", "127.0.0.1")
+    assert not registry_module._addresses_overlap("100.64.0.1", "127.0.0.1")
 
 
 def test_write_project_sync_files_generates_env_and_json(tmp_path: Path) -> None:
@@ -168,11 +181,91 @@ def test_validate_registry_flags_foreign_listener_but_not_own_service(tmp_path: 
     foreign = Listener(port=5201, process="python", raw="...", pid=222)
     monkeypatch.setattr(registry_module, "load_listeners", lambda: {5200: [own], 5201: [foreign]})
     monkeypatch.setattr(registry_module, "_pid_cwd", lambda pid: project if pid == 111 else Path("/somewhere/else"))
+    monkeypatch.setattr(registry_module, "_pid_command", lambda pid: "")
 
     errors = registry_module.validate_registry(registry)
 
     assert [error.code for error in errors] == ["port_in_use"]
     assert errors[0].port == 5201
+
+
+def test_validate_registry_ignores_distinct_bind_address_but_flags_wildcard(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    registry = Registry(
+        roots=[RootEntry(str(tmp_path))],
+        services=[
+            ServiceEntry(project=str(project), status="active", service="web", kind="web", port=5208, bind_host="127.0.0.1")
+        ],
+    )
+    monkeypatch.setattr(registry_module, "_discoveries_for", lambda registry, project_filter: {})
+    monkeypatch.setattr(registry_module, "_listener_belongs_to_project", lambda listener, project_path: False)
+
+    tailscale = Listener(port=5208, process="IPNExtens", raw="...", pid=2256, bind_address="100.64.0.1")
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5208: [tailscale]})
+    errors = registry_module.validate_registry(registry)
+    assert not any(error.code == "port_in_use" for error in errors)
+
+    wildcard = Listener(port=5208, process="python", raw="...", pid=999, bind_address="0.0.0.0")
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {5208: [wildcard]})
+    errors = registry_module.validate_registry(registry)
+    assert [error.code for error in errors] == ["port_in_use"]
+
+
+def test_listener_belongs_to_project_by_command_path_with_boundary(tmp_path: Path, monkeypatch) -> None:
+    webapp = tmp_path / "webapp"
+    listener = Listener(port=5277, process="node", raw="...", pid=2045, bind_address="127.0.0.1")
+    monkeypatch.setattr(registry_module, "_pid_cwd", lambda pid: Path("/"))
+    monkeypatch.setattr(
+        registry_module,
+        "_pid_command",
+        lambda pid: f"/usr/local/bin/node {webapp}/server/serve.mjs",
+    )
+
+    assert registry_module._listener_belongs_to_project(listener, webapp)
+
+    monkeypatch.setattr(
+        registry_module,
+        "_pid_command",
+        lambda pid: f"/usr/local/bin/node {webapp}-clone/server/serve.mjs",
+    )
+    assert not registry_module._listener_belongs_to_project(listener, webapp)
+
+
+def test_docker_port_working_dirs_uses_bind_mount_without_compose_label(tmp_path: Path, monkeypatch) -> None:
+    mount_source = tmp_path / "ops-cache" / "ntfy-cache"
+    responses = iter(
+        [
+            (0, "ntfy-id\n"),
+            (
+                0,
+                json.dumps(
+                    [
+                        {
+                            "Config": {"Labels": {}},
+                            "Mounts": [
+                                {"Type": "bind", "Source": str(mount_source), "Destination": "/var/cache/ntfy"},
+                                {"Type": "volume", "Source": "ignored-volume", "Destination": "/data"},
+                            ],
+                            "NetworkSettings": {"Ports": {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5288"}]}},
+                        }
+                    ]
+                ),
+            ),
+        ]
+    )
+
+    class FakeResult:
+        def __init__(self, returncode: int, stdout: str) -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return FakeResult(*next(responses))
+
+    monkeypatch.setattr(registry_module.subprocess, "run", fake_run)
+
+    assert registry_module._docker_port_working_dirs() == {5288: {mount_source.resolve()}}
 
 
 def test_validate_registry_attributes_docker_listener_to_service_project(tmp_path: Path, monkeypatch) -> None:

@@ -135,10 +135,62 @@ def test_completions_print_shell_scripts(capsys) -> None:
     assert main(["completions", "bash"]) == 0
     bash_output = capsys.readouterr().out
     assert "complete -F _portmanager portmanager" in bash_output
+    assert "projects" in bash_output
 
     assert main(["completions", "zsh"]) == 0
     zsh_output = capsys.readouterr().out
     assert "#compdef portmanager" in zsh_output
+    assert "projects:Manage standalone projects" in zsh_output
+
+
+def test_projects_add_creates_and_updates_standalone_project(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    standalone = tmp_path / "standalone"
+    workspace.mkdir()
+    standalone.mkdir()
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    capsys.readouterr()
+
+    assert main(["--registry", str(registry_path), "projects", "add", str(standalone)]) == 0
+    assert capsys.readouterr().out.strip() == str(standalone.resolve())
+    registry = registry_module.load_registry(registry_path)
+    assert [(project.path_obj, project.status) for project in registry.projects] == [(standalone.resolve(), "active")]
+
+    assert main(["--registry", str(registry_path), "projects", "add", str(standalone), "--status", "external"]) == 0
+    capsys.readouterr()
+    registry = registry_module.load_registry(registry_path)
+    assert [(project.path_obj, project.status) for project in registry.projects] == [(standalone.resolve(), "external")]
+
+    assert main(["--registry", str(registry_path), "projects", "list"]) == 0
+    assert capsys.readouterr().out.strip() == f"{standalone.resolve()} [external]"
+
+
+def test_projects_add_dry_run_writes_nothing(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    standalone = tmp_path / "standalone"
+    workspace.mkdir()
+    standalone.mkdir()
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    capsys.readouterr()
+    before = registry_path.read_text()
+
+    def fail_write(*args, **kwargs) -> None:
+        raise AssertionError("dry-run must not write registry artifacts")
+
+    monkeypatch.setattr(cli_module, "write_registry", fail_write)
+    monkeypatch.setattr(cli_module, "write_generated_artifacts", fail_write)
+
+    result = main(["--registry", str(registry_path), "projects", "add", str(standalone), "--dry-run"])
+
+    assert result == 0
+    assert capsys.readouterr().out.strip() == f"would add project {standalone.resolve()}"
+    assert registry_path.read_text() == before
 
 
 def test_adopt_dry_run_reports_existing_binding_without_mutation(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -245,3 +297,58 @@ def test_sync_runs_doctor_unless_disabled(tmp_path: Path, capsys, monkeypatch) -
 
     assert main([*sync_args, "--no-doctor"]) == 0
     assert "doctor:" not in capsys.readouterr().out
+
+
+def test_set_status_moves_a_service_between_lifecycle_states(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    assert main(["--registry", str(registry_path), "claim", str(project), "web", "--kind", "web"]) == 0
+    capsys.readouterr()
+
+    base = ["--registry", str(registry_path), "set-status", str(project), "web"]
+    assert main([*base, "external", "--dry-run"]) == 0
+    assert 'status = "active"' in registry_path.read_text()
+
+    assert main([*base, "external", "--notes", "owned outside the workspace"]) == 0
+    text = registry_path.read_text()
+    assert 'status = "external"' in text
+    assert "owned outside the workspace" in text
+
+    assert main([*base, "active"]) == 0
+    assert 'status = "active"' in registry_path.read_text()
+    assert "owned outside the workspace" in registry_path.read_text()
+
+    capsys.readouterr()
+    assert main(["--registry", str(registry_path), "set-status", str(project), "nope", "active"]) == 1
+    assert "no service named nope" in capsys.readouterr().err
+
+
+def test_adopt_does_not_lose_bindings_that_share_a_service_name(tmp_path: Path, capsys, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "demo"
+    project.mkdir(parents=True)
+    registry_path = tmp_path / "ports.toml"
+    (project / "docker-compose.yml").write_text(
+        "services:\n"
+        "  db:\n"
+        "    ports:\n"
+        '      - "5432:5432"\n'
+        "  redis:\n"
+        "    ports:\n"
+        '      - "6379:6379"\n'
+    )
+    (project / ".env").write_text("DB_PORT=5433\nREDIS_PORT=6380\n")
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+
+    assert main(["--registry", str(registry_path), "init", "--root", str(workspace)]) == 0
+    assert main(["--registry", str(registry_path), "adopt", str(project)]) == 0
+    capsys.readouterr()
+
+    text = registry_path.read_text()
+    for port in ("5432", "5433", "6379", "6380"):
+        assert f"port = {port}" in text, f"adopt dropped port {port}"

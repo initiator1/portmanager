@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import tomllib
@@ -21,6 +22,8 @@ from .models import DiscoveredPort, Listener, ProjectEntry, Registry, RootEntry,
 from .scanner import discover_all, discover_project_ports, discover_source_ports
 
 GOVERNING_SERVICE_STATUSES = {"active", "external"}
+_WILDCARD_ADDRESSES = {"", "*", "0.0.0.0", "::", "[::]"}
+_LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
 
 
 def default_registry(root: Path | None = None) -> Registry:
@@ -92,6 +95,10 @@ def configured_project_paths(registry: Registry) -> list[Path]:
             seen.add(resolved)
             project_paths.append(resolved)
     for project in registry.projects:
+        # `external` projects are reservation-only: portmanager holds ports for
+        # them but does not scan or instrument trees it does not manage.
+        if project.status == "external":
+            continue
         resolved = project.path_obj
         if resolved in seen or not resolved.exists():
             continue
@@ -206,16 +213,38 @@ def load_listeners() -> dict[int, list[Listener]]:
         # The NAME column is parts[8] (e.g. "127.0.0.1:5249"); lsof appends a
         # separate "(LISTEN)" token, so parts[-1] is NOT the endpoint.
         port = None
+        bind_address = ""
         for token in parts[8:]:
             tail = token.rsplit(":", 1)[-1]
             if ":" in token and tail.isdigit():
                 port = int(tail)
+                bind_address = token.rsplit(":", 1)[0]
+                if bind_address.startswith("[") and bind_address.endswith("]"):
+                    bind_address = bind_address[1:-1]
                 break
         if port is None:
             continue
         pid = int(parts[1]) if parts[1].isdigit() else None
-        listeners[port].append(Listener(port=port, process=name, raw=line, pid=pid))
+        listeners[port].append(Listener(port=port, process=name, raw=line, pid=pid, bind_address=bind_address))
     return listeners
+
+
+def _addresses_overlap(listener_address: str, service_bind_host: str) -> bool:
+    """A listener only conflicts when its bind address can collide with the service's."""
+
+    def normalize(address: str) -> str:
+        normalized = address.strip().lower()
+        if normalized.startswith("[") and normalized.endswith("]"):
+            return normalized[1:-1]
+        return normalized
+
+    if listener_address.strip().lower() in _WILDCARD_ADDRESSES or service_bind_host.strip().lower() in _WILDCARD_ADDRESSES:
+        return True
+    listener = normalize(listener_address)
+    service = normalize(service_bind_host)
+    if listener == service:
+        return True
+    return listener in _LOOPBACK_ADDRESSES and service in _LOOPBACK_ADDRESSES
 
 
 def _docker_port_working_dirs() -> dict[int, set[Path]]:
@@ -247,18 +276,30 @@ def _docker_port_working_dirs() -> dict[int, set[Path]]:
     for container in containers:
         if not isinstance(container, dict):
             continue
+        candidates: set[Path] = set()
         config = container.get("Config")
-        if not isinstance(config, dict):
-            continue
-        labels = config.get("Labels")
-        if not isinstance(labels, dict):
-            continue
-        working_dir = labels.get("com.docker.compose.project.working_dir")
-        if not isinstance(working_dir, str) or not working_dir:
-            continue
-        try:
-            resolved_working_dir = Path(working_dir).expanduser().resolve()
-        except (OSError, RuntimeError):
+        if isinstance(config, dict):
+            labels = config.get("Labels")
+            if isinstance(labels, dict):
+                working_dir = labels.get("com.docker.compose.project.working_dir")
+                if isinstance(working_dir, str) and working_dir:
+                    try:
+                        candidates.add(Path(working_dir).expanduser().resolve())
+                    except (OSError, RuntimeError):
+                        pass
+        mounts = container.get("Mounts")
+        if isinstance(mounts, list):
+            for entry in mounts:
+                if not isinstance(entry, dict) or entry.get("Type") != "bind":
+                    continue
+                source = entry.get("Source")
+                if not isinstance(source, str) or not source:
+                    continue
+                try:
+                    candidates.add(Path(source).expanduser().resolve())
+                except (OSError, RuntimeError):
+                    continue
+        if not candidates:
             continue
 
         network_settings = container.get("NetworkSettings")
@@ -277,7 +318,7 @@ def _docker_port_working_dirs() -> dict[int, set[Path]]:
                     host_port = int(entry.get("HostPort"))
                 except (TypeError, ValueError):
                     continue
-                ports[host_port].add(resolved_working_dir)
+                ports[host_port].update(candidates)
     return dict(ports)
 
 
@@ -289,14 +330,32 @@ def _pid_cwd(pid: int) -> Path | None:
     return None
 
 
+def _pid_command(pid: int) -> str:
+    try:
+        result = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], check=False, capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def _listener_belongs_to_project(listener: Listener, project_path: Path) -> bool:
     if listener.pid is None:
         return False
     cwd = _pid_cwd(listener.pid)
-    if cwd is None:
-        return False
     resolved = project_path.expanduser().resolve()
-    return cwd == resolved or resolved in cwd.parents
+    if cwd is not None and (cwd == resolved or resolved in cwd.parents):
+        return True
+    command = _pid_command(listener.pid)
+    for path_text in re.findall(r"/[^\s'\"]+", command):
+        try:
+            candidate = Path(path_text).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if candidate == resolved or resolved in candidate.parents:
+            return True
+    return False
 
 
 def _docker_listener_belongs_to_project(docker_ports: dict[int, set[Path]], port: int, project_path: Path) -> bool:
@@ -594,6 +653,8 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                 seen_ports[service.port] = service
             foreign: list[Listener] = []
             for listener in listeners.get(service.port, []):
+                if not _addresses_overlap(listener.bind_address, service.bind_host):
+                    continue
                 if _listener_belongs_to_project(listener, service.project_path):
                     continue
                 if listener.process.lower().startswith(("com.docke", "docker", "vpnkit")):

@@ -123,6 +123,7 @@ class Listener:
     process: str
     raw: str
     pid: int | None = None
+    bind_address: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

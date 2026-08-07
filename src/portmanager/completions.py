@@ -7,7 +7,7 @@ _portmanager()
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    commands="init scan claim release rename-service move-project adopt sync doctor run roots guardrails"
+    commands="init scan claim release set-status rename-service move-project adopt sync doctor run roots projects guardrails"
 
     case "$prev" in
         portmanager)
@@ -15,6 +15,10 @@ _portmanager()
             return 0
             ;;
         roots)
+            COMPREPLY=( $(compgen -W "add list" -- "$cur") )
+            return 0
+            ;;
+        projects)
             COMPREPLY=( $(compgen -W "add list" -- "$cur") )
             return 0
             ;;
@@ -47,8 +51,10 @@ _portmanager() {
     'adopt:Register discovered existing bindings'
     'sync:Generate per-project env files'
     'doctor:Validate registry state'
+    'set-status:Change a service lifecycle status'
     'run:Run a command with managed env'
     'roots:Manage discovery roots'
+    'projects:Manage standalone projects'
     'guardrails:Install agent guardrails'
   )
 
@@ -66,6 +72,9 @@ _portmanager() {
       case $words[2] in
         roots)
           _arguments '1:roots command:(add list)' '*:path:_files'
+          ;;
+        projects)
+          _arguments '1:projects command:(add list)' '--status[Project status]:(active external)' '--dry-run[Preview changes]' '*:path:_files'
           ;;
         guardrails)
           _arguments '1:guardrails command:(install)' '--dry-run[Preview targets]'
@@ -90,4 +99,3 @@ def completion_script(shell: str) -> str:
     if shell == "zsh":
         return ZSH_COMPLETION
     raise ValueError(f"unsupported shell: {shell}")
-

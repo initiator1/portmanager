@@ -15,6 +15,7 @@ from portmanager.guardrails import (
     upsert_managed_block,
 )
 from portmanager.models import ProjectEntry, Registry, RootEntry
+from portmanager.registry import configured_project_paths
 
 
 def test_build_managed_block_mentions_scope() -> None:
@@ -44,6 +45,30 @@ def test_build_managed_block_excludes_retired_projects_from_scope() -> None:
 
     assert "`/workspace/active`" in scope_line
     assert "`/workspace/retired`" not in scope_line
+
+
+def test_external_projects_are_reservation_only(tmp_path: Path, monkeypatch) -> None:
+    """External projects hold ports but are never scanned or given instruction files."""
+    external = tmp_path / "outside-workspace"
+    external.mkdir()
+    monkeypatch.setattr(guardrails_module, "CODEX_HOME_GUARDRAIL_PATH", tmp_path / ".codex" / "AGENTS.md")
+    monkeypatch.setattr(guardrails_module, "CLAUDE_HOME_GUARDRAIL_PATH", tmp_path / ".claude" / "CLAUDE.md")
+    monkeypatch.setattr(guardrails_module, "CLAUDE_HOME_RULE_PATH", tmp_path / ".claude" / "rules" / "pm.md")
+    monkeypatch.setattr(guardrails_module, "GEMINI_HOME_GUARDRAIL_PATH", tmp_path / ".gemini" / "GEMINI.md")
+    monkeypatch.setattr(guardrails_module, "ANTIGRAVITY_GLOBAL_WORKFLOW_PATH", tmp_path / ".gemini" / "flow.md")
+
+    registry = Registry(roots=[], projects=[ProjectEntry(str(external), status="external")])
+
+    block = build_managed_block(registry)
+    scope_line = next(line for line in block.splitlines() if line.startswith("- Managed workspace scope:"))
+    assert str(external) not in scope_line
+    assert external.resolve() not in configured_project_paths(registry)
+    assert not any(external in path.parents for path in planned_guardrail_targets(registry))
+
+    install_guardrails(registry)
+    assert not (external / "CLAUDE.md").exists()
+    assert not (external / "AGENTS.md").exists()
+    assert not (external / "GEMINI.md").exists()
 
 
 def test_build_antigravity_workflow_mentions_scope_and_commands() -> None:

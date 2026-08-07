@@ -11,7 +11,7 @@ from pathlib import Path
 from .completions import completion_script
 from .config import REGISTRY_FILE_NAME, registry_lock, resolve_registry_path
 from .guardrails import install_guardrails, legacy_block_removals, planned_guardrail_targets
-from .models import RootEntry
+from .models import ProjectEntry, RootEntry
 from .registry import (
     build_scan_payload,
     default_registry,
@@ -79,6 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--notes", default="Retired through portmanager release.")
     release_parser.add_argument("--dry-run", action="store_true")
 
+    status_parser = subparsers.add_parser("set-status", help="Change a service's lifecycle status")
+    status_parser.add_argument("project")
+    status_parser.add_argument("service")
+    status_parser.add_argument("status", choices=["active", "external", "retired"])
+    status_parser.add_argument("--notes", default="")
+    status_parser.add_argument("--dry-run", action="store_true")
+
     rename_parser = subparsers.add_parser("rename-service", help="Rename a service within a project")
     rename_parser.add_argument("project")
     rename_parser.add_argument("old_service")
@@ -115,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
     roots_add.add_argument("path")
     roots_add.add_argument("--dry-run", action="store_true")
     roots_subparsers.add_parser("list", help="List configured roots")
+
+    projects_parser = subparsers.add_parser("projects", help="Manage standalone projects")
+    projects_subparsers = projects_parser.add_subparsers(dest="projects_command", required=True)
+    projects_add = projects_subparsers.add_parser("add", help="Add a standalone project")
+    projects_add.add_argument("path")
+    projects_add.add_argument("--status", choices=["active", "external"], default="active")
+    projects_add.add_argument("--dry-run", action="store_true")
+    projects_subparsers.add_parser("list", help="List configured standalone projects")
 
     guardrails_parser = subparsers.add_parser("guardrails", help="Install/update cross-agent guardrails")
     guardrails_subparsers = guardrails_parser.add_subparsers(dest="guardrails_command", required=True)
@@ -269,7 +284,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
     return _run_project_doctor(registry_path, project, applied=f"the claim of {port} for {args.service}")
 
 
-def cmd_release(args: argparse.Namespace) -> int:
+def _apply_service_status(args: argparse.Namespace, status: str, verb: str, done: str) -> int:
     registry_path = _registry_path(args)
     with registry_lock(registry_path):
         registry = load_registry(registry_path)
@@ -279,14 +294,24 @@ def cmd_release(args: argparse.Namespace) -> int:
             print(f"ERROR: no service named {args.service} for {project}", file=sys.stderr)
             return 1
         if args.dry_run:
-            print(f"would retire {project}:{args.service}")
+            print(f"would {verb} {project}:{args.service}")
             return 0
-        service.status = "retired"
-        service.notes = args.notes
+        service.status = status
+        if args.notes:
+            service.notes = args.notes
         write_registry(registry, registry_path)
         write_generated_artifacts(registry, registry_path)
-    print(f"retired {project}:{args.service}")
+    print(f"{done} {project}:{args.service}")
     return 0
+
+
+def cmd_release(args: argparse.Namespace) -> int:
+    return _apply_service_status(args, "retired", "retire", "retired")
+
+
+def cmd_set_status(args: argparse.Namespace) -> int:
+    """Move a service between lifecycle states without releasing and re-claiming it."""
+    return _apply_service_status(args, args.status, f"set status {args.status} on", f"set status {args.status} on")
 
 
 def cmd_rename_service(args: argparse.Namespace) -> int:
@@ -338,6 +363,25 @@ def cmd_move_project(args: argparse.Namespace) -> int:
     return 0
 
 
+def _disambiguate_candidate_names(registry, project: Path, candidates: list[dict[str, object]]) -> None:
+    """Two bindings can share a service name (a db in compose and one in .env).
+
+    upsert_service keys on the name, so without this the second silently
+    overwrites the first and one binding is lost from the registry.
+    """
+    ports_by_name: dict[str, set[int]] = {}
+    for candidate in candidates:
+        ports_by_name.setdefault(str(candidate["service"]), set()).add(int(candidate["port"]))
+    for candidate in candidates:
+        name = str(candidate["service"])
+        port = int(candidate["port"])
+        collides_in_batch = len(ports_by_name[name]) > 1
+        existing = registry.service_for(project, name)
+        collides_with_registry = existing is not None and existing.port != port
+        if collides_in_batch or collides_with_registry:
+            candidate["service"] = f"{name}-{port}"
+
+
 def cmd_adopt(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
     with registry_lock(registry_path):
@@ -362,6 +406,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
                     "conflict": item.port in active_ports,
                 }
             )
+        _disambiguate_candidate_names(registry, project, candidates)
         if args.as_json:
             print(json.dumps({"project": str(project), "candidates": candidates}, indent=2, sort_keys=True))
         else:
@@ -498,6 +543,32 @@ def cmd_roots_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_projects_add(args: argparse.Namespace) -> int:
+    registry_path = _registry_path(args)
+    with registry_lock(registry_path):
+        registry = load_registry(registry_path)
+        project_path = Path(args.path).expanduser().resolve()
+        if args.dry_run:
+            print(f"would add project {project_path}")
+            return 0
+        existing = next((project for project in registry.projects if project.path_obj == project_path), None)
+        if existing is None:
+            registry.projects.append(ProjectEntry(str(project_path), status=args.status))
+        else:
+            existing.status = args.status
+        write_registry(registry, registry_path)
+        write_generated_artifacts(registry, registry_path)
+    print(project_path)
+    return 0
+
+
+def cmd_projects_list(args: argparse.Namespace) -> int:
+    registry = load_registry(_registry_path(args))
+    for project in registry.projects:
+        print(f"{project.path} [{project.status}]")
+    return 0
+
+
 def cmd_guardrails_install(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
     registry = load_registry(registry_path)
@@ -530,6 +601,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_claim(args)
     if args.command == "release":
         return cmd_release(args)
+    if args.command == "set-status":
+        return cmd_set_status(args)
     if args.command == "rename-service":
         return cmd_rename_service(args)
     if args.command == "move-project":
@@ -546,6 +619,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.roots_command == "add":
             return cmd_roots_add(args)
         return cmd_roots_list(args)
+    if args.command == "projects":
+        if args.projects_command == "add":
+            return cmd_projects_add(args)
+        return cmd_projects_list(args)
     if args.command == "guardrails":
         return cmd_guardrails_install(args)
     if args.command == "completions":
