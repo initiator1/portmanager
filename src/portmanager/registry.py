@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import tomllib
@@ -24,6 +25,15 @@ from .scanner import discover_all, discover_project_ports, discover_source_ports
 GOVERNING_SERVICE_STATUSES = {"active", "external"}
 _WILDCARD_ADDRESSES = {"", "*", "0.0.0.0", "::", "[::]"}
 _LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
+_DOCKER_BINARY_CANDIDATES = (
+    Path("/usr/local/bin/docker"),
+    Path("/opt/homebrew/bin/docker"),
+    Path("/Applications/Docker.app/Contents/Resources/bin/docker"),
+    Path("~/.docker/bin/docker"),
+    Path("/usr/bin/docker"),
+)
+_LSOF_BINARY_CANDIDATES = (Path("/usr/sbin/lsof"), Path("/usr/bin/lsof"), Path("/opt/homebrew/bin/lsof"))
+_PS_BINARY_CANDIDATES = (Path("/bin/ps"), Path("/usr/bin/ps"))
 
 
 def default_registry(root: Path | None = None) -> Registry:
@@ -201,7 +211,10 @@ def _governs_discovered_binding(service: ServiceEntry) -> bool:
 
 
 def load_listeners() -> dict[int, list[Listener]]:
-    command = ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"]
+    lsof = _resolve_binary("lsof", _LSOF_BINARY_CANDIDATES)
+    if lsof is None:
+        return {}
+    command = [lsof, "-nP", "-iTCP", "-sTCP:LISTEN"]
     result = subprocess.run(command, check=False, capture_output=True, text=True)
     listeners: dict[int, list[Listener]] = defaultdict(list)
     lines = result.stdout.splitlines()
@@ -247,9 +260,33 @@ def _addresses_overlap(listener_address: str, service_bind_host: str) -> bool:
     return listener in _LOOPBACK_ADDRESSES and service in _LOOPBACK_ADDRESSES
 
 
+def _resolve_binary(name: str, candidates: tuple[Path, ...]) -> str | None:
+    """Find an external tool without depending on the caller's PATH.
+
+    A cron or launchd run inherits a minimal PATH. Unresolved tools degrade
+    silently and badly: no `docker` makes every Docker-proxied port look like a
+    foreign-process conflict, and no `lsof` makes every port look free.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in candidates:
+        path = candidate.expanduser()
+        if path.exists():
+            return str(path)
+    return None
+
+
+def docker_binary() -> str | None:
+    return _resolve_binary("docker", _DOCKER_BINARY_CANDIDATES)
+
+
 def _docker_port_working_dirs() -> dict[int, set[Path]]:
+    docker = docker_binary()
+    if docker is None:
+        return {}
     try:
-        ps_result = subprocess.run(["docker", "ps", "-q"], check=False, capture_output=True, text=True, timeout=5)
+        ps_result = subprocess.run([docker, "ps", "-q"], check=False, capture_output=True, text=True, timeout=5)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return {}
     if ps_result.returncode != 0:
@@ -259,7 +296,7 @@ def _docker_port_working_dirs() -> dict[int, set[Path]]:
         return {}
 
     try:
-        inspect_result = subprocess.run(["docker", "inspect", *container_ids], check=False, capture_output=True, text=True, timeout=5)
+        inspect_result = subprocess.run([docker, "inspect", *container_ids], check=False, capture_output=True, text=True, timeout=5)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return {}
     if inspect_result.returncode != 0:
@@ -323,7 +360,10 @@ def _docker_port_working_dirs() -> dict[int, set[Path]]:
 
 
 def _pid_cwd(pid: int) -> Path | None:
-    result = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, capture_output=True, text=True)
+    lsof = _resolve_binary("lsof", _LSOF_BINARY_CANDIDATES)
+    if lsof is None:
+        return None
+    result = subprocess.run([lsof, "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, capture_output=True, text=True)
     for line in result.stdout.splitlines():
         if line.startswith("n"):
             return Path(line[1:])
@@ -332,7 +372,10 @@ def _pid_cwd(pid: int) -> Path | None:
 
 def _pid_command(pid: int) -> str:
     try:
-        result = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], check=False, capture_output=True, text=True)
+        ps = _resolve_binary("ps", _PS_BINARY_CANDIDATES)
+        if ps is None:
+            return ""
+        result = subprocess.run([ps, "-o", "command=", "-p", str(pid)], check=False, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError):
         return ""
     if result.returncode != 0:
@@ -658,6 +701,11 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                 if _listener_belongs_to_project(listener, service.project_path):
                     continue
                 if listener.process.lower().startswith(("com.docke", "docker", "vpnkit")):
+                    if docker_binary() is None:
+                        # A Docker proxy is listening, so Docker is installed and
+                        # we simply cannot reach its CLI. Reporting a conflict we
+                        # cannot verify would fire on every scheduled run.
+                        continue
                     if docker_ports is None:
                         docker_ports = _docker_port_working_dirs()
                     if _docker_listener_belongs_to_project(docker_ports, service.port, service.project_path):

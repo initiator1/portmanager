@@ -590,3 +590,38 @@ def test_validate_registry_reports_unclaimed_listeners_on_managed_ports(monkeypa
     # Project-scoped runs must not report a registry-wide condition.
     scoped = validate_registry(registry, project_filter=Path("/workspace/demo"))
     assert not any(error.code == "unregistered_managed_port" for error in scoped)
+
+
+def test_resolve_binary_falls_back_to_known_paths_when_path_is_minimal(tmp_path: Path, monkeypatch) -> None:
+    """cron and launchd inherit a minimal PATH; unresolved tools degrade silently and badly."""
+    installed = tmp_path / "docker"
+    installed.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(registry_module.shutil, "which", lambda _name: None)
+
+    assert registry_module._resolve_binary("docker", (tmp_path / "absent", installed)) == str(installed)
+    assert registry_module._resolve_binary("docker", (tmp_path / "absent",)) is None
+
+    monkeypatch.setattr(registry_module.shutil, "which", lambda _name: "/from/path/docker")
+    assert registry_module._resolve_binary("docker", (installed,)) == "/from/path/docker"
+
+
+def test_docker_proxy_listener_is_not_a_conflict_when_the_docker_cli_is_unreachable(monkeypatch) -> None:
+    """A Docker proxy is listening, so Docker exists; an unverifiable claim must not fire."""
+    registry = Registry(
+        roots=[],
+        services=[ServiceEntry(project="/workspace/demo", status="active", service="db", kind="db", port=5190, bind_host="127.0.0.1")],
+    )
+    monkeypatch.setattr(
+        registry_module,
+        "load_listeners",
+        lambda: {5190: [Listener(port=5190, process="com.docke", raw="", pid=1, bind_address="127.0.0.1")]},
+    )
+    monkeypatch.setattr(registry_module, "discover_all", lambda _registry: {})
+    monkeypatch.setattr(registry_module, "_listener_belongs_to_project", lambda _listener, _project: False)
+
+    monkeypatch.setattr(registry_module, "docker_binary", lambda: None)
+    assert not [error for error in validate_registry(registry) if error.code == "port_in_use"]
+
+    monkeypatch.setattr(registry_module, "docker_binary", lambda: "/usr/local/bin/docker")
+    monkeypatch.setattr(registry_module, "_docker_port_working_dirs", lambda: {})
+    assert [error for error in validate_registry(registry) if error.code == "port_in_use"]

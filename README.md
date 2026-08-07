@@ -238,6 +238,11 @@ are attributed via the owning container's Compose working-directory label or
 bind-mount source paths, so project-owned Compose and plain `docker run`
 containers do not trigger `port_in_use`.
 
+External tools (`lsof`, `ps`, `docker`) are resolved from known install
+locations when they are not on `PATH`, so a cron or launchd run reports the
+same findings as an interactive shell. Without this, an unreachable `docker`
+turns every Docker-proxied port into a false `port_in_use` on every run.
+
 Use `doctor --json` when another tool or agent needs stable error codes:
 
 ```json
