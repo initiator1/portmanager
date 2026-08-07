@@ -5,7 +5,7 @@ from pathlib import Path
 
 import portmanager.registry as registry_module
 from portmanager.models import Listener, Registry, RootEntry, ServiceEntry
-from portmanager.registry import build_scan_payload, next_free_port, write_project_sync_files
+from portmanager.registry import build_scan_payload, next_free_port, validate_registry, write_project_sync_files
 
 
 def test_next_free_port_skips_assigned_and_listeners(monkeypatch) -> None:
@@ -558,3 +558,35 @@ def test_validate_registry_ignores_reference_only_ports(tmp_path: Path, monkeypa
     errors = registry_module.validate_registry(registry)
 
     assert errors == []
+
+
+def test_validate_registry_reports_unclaimed_listeners_on_managed_ports(monkeypatch) -> None:
+    registry = Registry(
+        roots=[],
+        services=[ServiceEntry(project="/workspace/demo", status="active", service="web", kind="web", port=5190, bind_host="127.0.0.1")],
+    )
+    listeners = {
+        5190: [Listener(port=5190, process="node", raw="", pid=1, bind_address="127.0.0.1")],
+        5191: [
+            Listener(port=5191, process="python3.13", raw="", pid=2, bind_address="127.0.0.1"),
+            Listener(port=5191, process="python3.13", raw="", pid=3, bind_address="127.0.0.1"),
+        ],
+        4000: [Listener(port=4000, process="node", raw="", pid=4, bind_address="127.0.0.1")],
+    }
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: listeners)
+    monkeypatch.setattr(registry_module, "discover_all", lambda _registry: {})
+    monkeypatch.setattr(registry_module, "_listener_belongs_to_project", lambda _listener, _project: True)
+
+    codes = [(error.code, error.port) for error in validate_registry(registry)]
+
+    # 5191 is in range and governed by nothing; 5190 is claimed; 4000 is out of range.
+    assert ("unregistered_managed_port", 5191) in codes
+    assert not any(code == "unregistered_managed_port" and port != 5191 for code, port in codes)
+
+    message = next(error.message for error in validate_registry(registry) if error.code == "unregistered_managed_port")
+    assert "python3.13" in message
+    assert message.count("python3.13") == 1
+
+    # Project-scoped runs must not report a registry-wide condition.
+    scoped = validate_registry(registry, project_filter=Path("/workspace/demo"))
+    assert not any(error.code == "unregistered_managed_port" for error in scoped)

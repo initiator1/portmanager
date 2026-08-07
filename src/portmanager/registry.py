@@ -722,4 +722,22 @@ def validate_registry(registry: Registry, project_filter: Path | None = None) ->
                         source_file=item.source_file,
                     )
                 )
+
+    if project_filter is None:
+        # A live listener on a managed port that no service governs. Nothing
+        # else looks for this: every other check starts from a registry entry,
+        # so an unclaimed process holding a managed port is invisible until
+        # auto-assign quietly skips the port. Only meaningful registry-wide.
+        for port in range(registry.managed_range_start, registry.managed_range_end + 1):
+            port_listeners = listeners.get(port) or []
+            if not port_listeners or governing_service_for_port(registry, port) is not None:
+                continue
+            processes = ", ".join(sorted({listener.process for listener in port_listeners}))
+            errors.append(
+                ValidationError(
+                    code="unregistered_managed_port",
+                    message=f"unregistered listener on managed port {port} ({processes}); claim it or move the service out of the managed range",
+                    port=port,
+                )
+            )
     return errors

@@ -224,6 +224,13 @@ portmanager doctor --all
 out-of-range active assignments, missing source files, and source drift in
 supported config types.
 
+`doctor --all` additionally reports `unregistered_managed_port`: a live listener
+on a port inside the managed range that no registry entry governs. Every other
+check starts from a registry entry, so without this a process squatting an
+unclaimed managed port stays invisible — auto-assign silently skips the port and
+nothing says why. The check is registry-wide, so a project-scoped `doctor` does
+not report it.
+
 Listeners are checked only when their bind address overlaps the registered
 service host, then attributed to projects by process working directory or
 absolute project paths in the process command line. Docker Desktop port proxies
