@@ -259,3 +259,8 @@ Use `doctor --json` when another tool or agent needs stable error codes:
   ]
 }
 ```
+
+## Support
+
+Portmanager is free and MIT licensed, and it stays that way. If it saved you a
+port conflict, you can [buy me a coffee](https://ko-fi.com/initiatorworks?app=portmanager).

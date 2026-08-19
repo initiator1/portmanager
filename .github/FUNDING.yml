@@ -1,0 +1,4 @@
+# One Ko-fi page collects for several free MIT tools. The app= tag records
+# which one sent the visitor. The ko_fi: key takes a bare username and would
+# drop the tag, so use custom:.
+custom: ["https://ko-fi.com/initiatorworks?app=portmanager"]

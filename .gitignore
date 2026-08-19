@@ -15,5 +15,8 @@ ports.toml.lock
 ports.lock.json
 PORTS.md
 *-next-to-do.md
+
+# Local operations ledger. Records real machine state, so it stays local.
+OPEN-ITEMS.md
 !examples/
 !examples/ports.toml
