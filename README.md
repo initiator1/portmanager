@@ -215,6 +215,9 @@ active or external project entries.
 
 ## Validation
 
+The static landing page lives in `site/`. See [Website](docs/WEBSITE.md) for
+its managed local preview, verification, and GitHub Pages deployment.
+
 ```bash
 uv run pytest
 portmanager doctor --all

@@ -1,6 +1,6 @@
 [project]
 name = "portmanager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Cross-agent port governance for local workspaces"
 readme = "README.md"
 requires-python = ">=3.11"
