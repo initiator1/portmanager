@@ -1,0 +1,973 @@
+@font-face {
+  font-family: Barlow;
+  src: url("assets/barlow-regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Barlow;
+  src: url("assets/barlow-semibold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("assets/barlow-condensed-semibold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+:root {
+  --base: #16242c;
+  --deep: #101b22;
+  --panel: #21333d;
+  --text: #e6eef0;
+  --muted: #b0c4ce;
+  --copper: #e4ac83;
+  --blue: #95c4d3;
+  --line: #3a515d;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 30px;
+}
+body {
+  margin: 0;
+  background: var(--base);
+  color: var(--text);
+  font-family: Barlow, "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1.55;
+}
+a {
+  color: inherit;
+  text-underline-offset: 5px;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+}
+a,
+button,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 5px;
+}
+::selection {
+  background: var(--copper);
+  color: var(--deep);
+}
+.shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-left: 40px;
+  padding-right: 40px;
+}
+.skip-link {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  transform: translateY(-160%);
+  padding: 10px 20px;
+  background: var(--text);
+  color: var(--deep);
+  z-index: 10;
+}
+.skip-link:focus {
+  transform: none;
+}
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 104px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-decoration: none;
+  font-size: 22px;
+  font-weight: 600;
+  min-height: 44px;
+}
+.brand-mark {
+  display: flex;
+  gap: 4px;
+  border: 1px solid var(--copper);
+  border-radius: 5px;
+  padding: 9px 8px;
+}
+.brand-mark i {
+  width: 6px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--copper);
+}
+.brand-mark i:nth-child(2) {
+  background: var(--blue);
+}
+.brand-mark i:nth-child(3) {
+  background: var(--muted);
+}
+nav {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+}
+nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 16px;
+  text-decoration: none;
+}
+nav a:hover,
+.text-link:hover {
+  color: var(--copper);
+}
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  padding-top: 78px;
+  padding-bottom: 80px;
+  align-items: center;
+}
+.intro {
+  font-size: 18px;
+  color: var(--copper);
+  margin: 0 0 18px;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1,
+h2 {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-weight: 600;
+  line-height: 1.03;
+  letter-spacing: -0.02em;
+}
+h1 {
+  font-size: 84px;
+  margin-bottom: 28px;
+}
+h2 {
+  font-size: 50px;
+}
+h3 {
+  font-size: 25px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.hero-description {
+  font-size: 21px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 30px;
+}
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.button {
+  display: inline-flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 600;
+}
+.primary {
+  background: var(--copper);
+  border-color: var(--copper);
+  color: var(--deep);
+}
+.primary:hover {
+  background: #f0bf9b;
+}
+.secondary {
+  border-color: var(--blue);
+  color: var(--text);
+}
+.secondary:hover {
+  background: var(--panel);
+}
+.hero-meta {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 24px 0 0;
+}
+.hero-meta span {
+  padding: 0 6px;
+  color: #657f8e;
+}
+.patchbay {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid #6b7c83;
+  border-radius: 10px;
+  padding: 20px 22px 16px;
+  box-shadow:
+    inset 0 0 0 4px #1a2b34,
+    0 12px 28px #08101766;
+}
+.patchbay:before,
+.patchbay:after {
+  content: "+";
+  position: absolute;
+  color: #849ba6;
+  font-size: 16px;
+  line-height: 16px;
+  top: 6px;
+  left: 8px;
+}
+.patchbay:after {
+  left: auto;
+  right: 8px;
+}
+.bay-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0 18px;
+}
+.bay-heading h2 {
+  font-family: Barlow, sans-serif;
+  font-size: 21px;
+  letter-spacing: 0;
+  line-height: 1.2;
+  margin: 0;
+}
+.status-badge {
+  font-size: 13px;
+  border: 1px solid #c5977f;
+  color: #f2baa1;
+  padding: 3px 10px;
+  border-radius: 16px;
+  white-space: nowrap;
+}
+.bay-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 102px;
+  align-items: center;
+  gap: 12px;
+  min-height: 88px;
+  border-top: 1px solid var(--line);
+  --wire: var(--copper);
+}
+.bay-row.api {
+  --wire: var(--blue);
+}
+.bay-row.docs {
+  --wire: #c2ccd0;
+}
+.project-name {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.project-name small {
+  display: block;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.connection {
+  height: 60px;
+  position: relative;
+  margin-right: 4px;
+}
+.socket {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #0b171e;
+  border: 3px solid #879aa3;
+  box-shadow:
+    inset 0 0 0 3px #3d505a,
+    0 2px 0 #101a22;
+  position: absolute;
+  top: 7px;
+  z-index: 2;
+}
+.socket.start {
+  left: 0;
+}
+.socket.end {
+  right: 0;
+}
+.wire {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 20px;
+  height: 31px;
+  border: 7px solid var(--wire);
+  border-top: 0;
+  border-radius: 0 0 50% 50%;
+  box-shadow:
+    0 3px 0 #0b141b,
+    inset 0 -2px 0 #ffffff2b;
+  z-index: 3;
+}
+.port {
+  display: inline-block;
+  padding: 8px 10px;
+  background: #0b1921;
+  border: 1px solid #516975;
+  border-radius: 4px;
+  color: var(--blue);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 22px;
+  white-space: nowrap;
+  box-shadow: inset 0 2px 5px #0006;
+}
+.patchbay[data-state="collision"] .port {
+  color: #efb4a0;
+}
+.patchbay[data-state="assigned"] .status-badge {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.bay-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.bay-caption {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 115px;
+}
+.demo-button {
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 14px;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  background: var(--deep);
+  color: var(--text);
+}
+.demo-button:hover {
+  background: #314652;
+}
+.terminal {
+  background: var(--deep);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 15px;
+}
+.terminal-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #304753;
+  font-size: 13px;
+  color: var(--muted);
+}
+.terminal-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--copper);
+  border-radius: 50%;
+}
+pre,
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 14px;
+}
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.terminal pre {
+  padding: 16px 18px;
+  min-height: 95px;
+  color: var(--blue);
+}
+.demo-note {
+  font-size: 14px;
+  color: var(--muted);
+}
+.how-section,
+.install-section,
+.faq-section,
+.closing {
+  border-top: 1px solid var(--line);
+  padding-top: 64px;
+  padding-bottom: 64px;
+}
+.section-heading {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+  margin-bottom: 44px;
+}
+.section-heading h2 {
+  margin: 0;
+}
+.section-heading p {
+  color: var(--muted);
+  max-width: 460px;
+  margin: 0;
+  font-size: 20px;
+}
+.workflow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 38px;
+}
+.workflow article {
+  position: relative;
+  padding-top: 13px;
+}
+.step {
+  font-family: "Barlow Condensed", sans-serif;
+  display: block;
+  font-size: 32px;
+  color: var(--copper);
+  margin-bottom: 12px;
+  line-height: 1;
+}
+.workflow h3 {
+  margin-bottom: 12px;
+}
+.workflow p {
+  font-size: 17px;
+  color: var(--muted);
+  min-height: 106px;
+  margin-bottom: 18px;
+}
+.workflow code {
+  font-size: 13px;
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+.install-section {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 74px;
+  align-items: start;
+}
+.install-copy h2 {
+  font-size: 65px;
+  margin-bottom: 25px;
+}
+.install-copy > p {
+  color: var(--muted);
+  max-width: 360px;
+}
+.install-copy .intro {
+  color: var(--copper);
+}
+.requirements {
+  font-size: 16px;
+  margin-top: 25px;
+}
+.text-link {
+  font-size: 16px;
+  font-weight: 600;
+}
+.code-panel {
+  background: var(--deep);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 18px;
+}
+.code-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 7px 18px;
+}
+.code-heading h3 {
+  font-size: 16px;
+  margin: 0;
+}
+.copy-button {
+  background: transparent;
+  color: var(--blue);
+  border: 0;
+  font-size: 14px;
+  min-height: 44px;
+  min-width: 48px;
+  border-radius: 3px;
+}
+.copy-button:hover {
+  color: var(--copper);
+}
+.code-panel pre {
+  padding: 18px;
+  color: var(--text);
+}
+.code-panel > p {
+  padding: 0 18px 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.code-panel p code {
+  font-size: 12px;
+}
+.configuration {
+  border-bottom: 1px solid var(--line);
+}
+summary {
+  cursor: pointer;
+  min-height: 54px;
+  padding: 14px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.configuration p {
+  font-size: 16px;
+  color: var(--muted);
+}
+.configuration pre {
+  background: var(--deep);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 4px;
+}
+.configuration code {
+  font-size: 13px;
+}
+.copy-status {
+  font-size: 14px;
+  color: var(--blue);
+  min-height: 22px;
+  margin: 12px 0 0;
+}
+.faq-section {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 74px;
+}
+.faq-section h2 {
+  font-size: 44px;
+  margin: 14px 0;
+}
+.faq-list details {
+  border-bottom: 1px solid var(--line);
+}
+.faq-list details:first-child {
+  border-top: 1px solid var(--line);
+}
+.faq-list summary {
+  padding: 20px 0;
+  font-size: 20px;
+  min-height: 65px;
+}
+.faq-list p {
+  font-size: 17px;
+  color: var(--muted);
+  max-width: 540px;
+  padding-bottom: 10px;
+}
+.faq-list code {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.closing {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 28px;
+}
+.closing h2 {
+  font-size: 55px;
+  margin: 0;
+}
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 32px;
+  padding-bottom: 32px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.site-footer p {
+  margin: 0;
+}
+.site-footer p span {
+  display: block;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.site-footer nav {
+  gap: 22px;
+}
+.site-footer nav a {
+  font-size: 14px;
+}
+@media (min-width: 1200px) {
+  .hero {
+    gap: 55px;
+  }
+  .hero-copy {
+    padding-top: 5px;
+  }
+}
+@media (max-width: 1050px) {
+  h1 {
+    font-size: 70px;
+  }
+  .hero {
+    gap: 30px;
+  }
+  .bay-row {
+    grid-template-columns: 92px 1fr 90px;
+    gap: 8px;
+  }
+  .project-name {
+    font-size: 20px;
+  }
+  .port {
+    font-size: 19px;
+  }
+  .patchbay {
+    padding: 18px;
+  }
+  .bay-heading h2 {
+    font-size: 18px;
+  }
+  .install-section,
+  .faq-section {
+    gap: 40px;
+  }
+  .hero-description {
+    font-size: 19px;
+  }
+  .workflow {
+    gap: 26px;
+  }
+  .workflow p {
+    min-height: 130px;
+  }
+  .bay-caption {
+    max-width: 94px;
+  }
+}
+@media (max-width: 790px) {
+  .shell {
+    padding-left: 25px;
+    padding-right: 25px;
+  }
+  .site-header {
+    min-height: 90px;
+  }
+  .site-header nav {
+    gap: 18px;
+  }
+  .site-header nav a {
+    font-size: 15px;
+  }
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 45px;
+    padding-top: 48px;
+    padding-bottom: 55px;
+  }
+  .hero-copy {
+    max-width: 600px;
+  }
+  h1 {
+    font-size: 76px;
+  }
+  .hero-description {
+    font-size: 21px;
+  }
+  .workspace-demo {
+    max-width: 600px;
+    width: 100%;
+  }
+  .bay-row {
+    grid-template-columns: 125px 1fr 108px;
+    gap: 18px;
+  }
+  .port {
+    font-size: 24px;
+  }
+  .project-name {
+    font-size: 22px;
+  }
+  .bay-heading h2 {
+    font-size: 21px;
+  }
+  .bay-caption {
+    max-width: none;
+  }
+  .section-heading,
+  .install-section,
+  .faq-section {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .section-heading p {
+    max-width: 550px;
+  }
+  .workflow {
+    gap: 22px;
+  }
+  .workflow p {
+    min-height: 155px;
+  }
+  .workflow code {
+    font-size: 12px;
+  }
+  .install-copy > p {
+    max-width: 550px;
+  }
+  .install-copy h2 br {
+    display: none;
+  }
+  .faq-section h2 {
+    margin-top: 0;
+  }
+  .site-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .how-section,
+  .install-section,
+  .faq-section,
+  .closing {
+    padding-top: 48px;
+    padding-bottom: 48px;
+  }
+  .closing h2 {
+    font-size: 48px;
+  }
+}
+@media (max-width: 520px) {
+  .shell {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .site-header {
+    flex-wrap: wrap;
+    min-height: 110px;
+    gap: 0;
+    padding-top: 15px;
+    padding-bottom: 8px;
+  }
+  .brand {
+    font-size: 21px;
+  }
+  .site-header nav {
+    width: 100%;
+    gap: 25px;
+  }
+  .site-header nav a {
+    font-size: 14px;
+    min-height: 44px;
+  }
+  .hero {
+    padding-top: 36px;
+    gap: 34px;
+  }
+  h1 {
+    font-size: 62px;
+  }
+  .intro {
+    font-size: 16px;
+    margin-bottom: 14px;
+  }
+  .hero-description {
+    font-size: 19px;
+  }
+  .hero-description br {
+    display: none;
+  }
+  .hero-actions {
+    gap: 10px;
+  }
+  .button {
+    font-size: 16px;
+    min-height: 50px;
+    padding: 11px 19px;
+  }
+  .hero-meta {
+    font-size: 13px;
+  }
+  .hero-meta span {
+    padding: 0 3px;
+  }
+  .patchbay {
+    padding: 18px 14px 14px;
+  }
+  .bay-heading {
+    gap: 8px;
+  }
+  .bay-heading h2 {
+    font-size: 18px;
+  }
+  .status-badge {
+    font-size: 12px;
+    padding: 3px 8px;
+  }
+  .bay-row {
+    grid-template-columns: 88px 1fr 85px;
+    gap: 10px;
+    min-height: 84px;
+  }
+  .project-name {
+    font-size: 20px;
+  }
+  .project-name small {
+    font-size: 11px;
+  }
+  .port {
+    font-size: 19px;
+    padding: 8px;
+  }
+  .socket {
+    width: 22px;
+    height: 22px;
+  }
+  .wire {
+    left: 10px;
+    right: 10px;
+    border-width: 6px;
+    top: 18px;
+    height: 28px;
+  }
+  .bay-caption {
+    font-size: 12px;
+    max-width: 95px;
+  }
+  .demo-button {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .terminal pre {
+    font-size: 12px;
+    min-height: 94px;
+    padding: 14px;
+  }
+  .terminal-label {
+    font-size: 12px;
+    padding: 9px 14px;
+  }
+  .section-heading h2 {
+    font-size: 43px;
+  }
+  .section-heading p {
+    font-size: 18px;
+  }
+  .section-heading {
+    margin-bottom: 20px;
+  }
+  .workflow {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .workflow article {
+    display: grid;
+    grid-template-columns: 25px 1fr;
+    column-gap: 18px;
+    border-top: 1px solid #304753;
+    padding-top: 22px;
+  }
+  .step {
+    grid-row: 1/4;
+    font-size: 28px;
+  }
+  .workflow h3 {
+    font-size: 24px;
+  }
+  .workflow p {
+    min-height: 0;
+    margin-bottom: 12px;
+    font-size: 17px;
+  }
+  .workflow code {
+    font-size: 12px;
+  }
+  .install-copy h2 {
+    font-size: 52px;
+  }
+  .install-copy h2 br {
+    display: block;
+  }
+  .code-heading {
+    padding: 6px 14px;
+  }
+  .code-heading h3 {
+    font-size: 15px;
+  }
+  .code-panel pre {
+    padding: 14px;
+  }
+  .code-panel pre code {
+    font-size: 12px;
+  }
+  .code-panel > p {
+    padding: 0 14px 14px;
+  }
+  .configuration summary {
+    font-size: 17px;
+  }
+  .faq-section h2 {
+    font-size: 40px;
+  }
+  .faq-list summary {
+    font-size: 18px;
+  }
+  .closing {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .closing h2 {
+    font-size: 50px;
+  }
+  .site-footer nav {
+    flex-wrap: wrap;
+    gap: 10px 22px;
+  }
+  .site-footer nav a {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

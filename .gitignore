@@ -7,6 +7,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+output/
 
 # Local registry state can reveal private project names and filesystem paths.
 ports.toml
