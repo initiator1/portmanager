@@ -41,11 +41,11 @@ Enable Pages with GitHub Actions as its publishing source before the first run.
 The default project URL is `https://initiator1.github.io/portmanager/`.
 Relative asset URLs support this project path and a future custom domain.
 
-The displayed install command pins the tested launcher repair commit
-`d099075663037d363ef3541f25c4d079193bad99`. Push that commit and verify the
-remote installation before publishing the page. Switch to a verified release
-tag after publication. Never point visitors at the older release with the broken
-launcher. Confirm the final name before publishing the page. Domain registration needs BOSS's chosen name and
+The displayed install command installs from the default branch (`main`).
+It is correct only after PR #1 merges, because `main` and the v0.1.0 release
+still carry the broken launcher. Verify the remote installation from `main`
+before publishing the page. Switch to a verified release tag after the next
+release. Never point visitors at the older release with the broken launcher. Confirm the final name before publishing the page. Domain registration needs BOSS's chosen name and
 approval of the actual registrar quote. Do not add a `CNAME` until the domain is
 owned and its DNS records are ready.
 
