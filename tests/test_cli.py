@@ -46,6 +46,16 @@ def test_run_without_child_reports_error_without_writing_files(tmp_path, capsys,
     assert not (tmp_path / ".portmanager").exists()
 
 
+def test_run_with_command_but_no_project_does_not_create_a_folder(tmp_path, capsys, monkeypatch):
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+    monkeypatch.chdir(tmp_path)
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    assert main(["--registry", str(registry_path), "run", "--", "echo", "hi"]) == 2
+    assert "project folder not found: echo" in capsys.readouterr().err
+    assert not (tmp_path / "echo").exists()
+
+
 def test_run_missing_executable_reports_error(tmp_path, capsys, monkeypatch):
     registry_path = tmp_path / "ports.toml"
     monkeypatch.setattr(registry_module, "load_listeners", lambda: {})

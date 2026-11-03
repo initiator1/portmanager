@@ -38,7 +38,11 @@ def _package_version() -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="portmanager")
+    parser = argparse.ArgumentParser(
+        prog="portmanager",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=GETTING_STARTED,
+    )
     parser.add_argument("--registry", help="Path to ports.toml. Defaults to PORTMANAGER_REGISTRY, nearest ports.toml, or user config.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {_package_version()}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -112,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--all", action="store_true")
     doctor_parser.add_argument("--json", action="store_true", dest="as_json")
 
-    run_parser = subparsers.add_parser("run", help="Load synced env and run a project command")
+    run_parser = subparsers.add_parser("run", help="Load synced env and run a project command", description="Example: portmanager run . -- npm run dev")
     run_parser.add_argument("project")
     run_parser.add_argument("child_command", nargs=argparse.REMAINDER, metavar="command")
 
@@ -182,6 +186,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         write_registry(registry, registry_path)
         write_generated_artifacts(registry, registry_path)
     print(registry_path)
+    print("next: portmanager claim <project> <service> --kind web", file=sys.stderr)
     return 0
 
 
@@ -442,6 +447,9 @@ def cmd_sync(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
     registry = load_registry(registry_path)
     project = resolve_project_argument(registry, args.project)
+    if not project.is_dir():
+        print(f"ERROR: project folder not found: {args.project}", file=sys.stderr)
+        return 2
     if args.dry_run:
         print(project / ".portmanager" / "ports.env")
         print(project / ".portmanager" / "ports.json")
@@ -497,6 +505,21 @@ def _load_env_file(path: Path) -> dict[str, str]:
     return env
 
 
+GETTING_STARTED = """getting started:
+  portmanager init                         create ports.toml in your workspace folder
+  portmanager claim myapp web --kind web   give myapp's web server a stable port
+  portmanager run myapp -- npm run dev     start it with PM_PORT_WEB set
+"""
+
+
+def _require_project_dir(project: Path, value: str) -> bool:
+    if project.is_dir():
+        return True
+    print(f"ERROR: project folder not found: {value}", file=sys.stderr)
+    print("usage: portmanager run <project> -- <command>   (use . for this folder)", file=sys.stderr)
+    return False
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     command = args.child_command
     if command and command[0] == "--":
@@ -506,6 +529,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
     registry = load_registry(_registry_path(args))
     project = resolve_project_argument(registry, args.project)
+    if not _require_project_dir(project, args.project):
+        return 2
     write_project_sync_files(registry, project)
     errors = validate_registry(registry, project_filter=project)
     if errors:
