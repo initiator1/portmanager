@@ -56,6 +56,22 @@ def test_run_with_command_but_no_project_does_not_create_a_folder(tmp_path, caps
     assert not (tmp_path / "echo").exists()
 
 
+def test_project_name_does_not_match_a_longer_folder_name(tmp_path, monkeypatch):
+    (tmp_path / "webapp").mkdir()
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+    monkeypatch.chdir(tmp_path)
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    registry = registry_module.load_registry(registry_path)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    assert registry_module.resolve_project_argument(registry, "app") == (other / "app").resolve()
+    assert registry_module.resolve_project_argument(registry, "webapp") == (tmp_path / "webapp").resolve()
+    nested = tmp_path.name + "/webapp"
+    assert registry_module.resolve_project_argument(registry, nested) == (tmp_path / "webapp").resolve()
+
+
 def test_run_missing_executable_reports_error(tmp_path, capsys, monkeypatch):
     registry_path = tmp_path / "ports.toml"
     monkeypatch.setattr(registry_module, "load_listeners", lambda: {})

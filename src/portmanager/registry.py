@@ -121,8 +121,13 @@ def resolve_project_argument(registry: Registry, value: str) -> Path:
     raw_path = Path(value).expanduser()
     if raw_path.is_absolute():
         return raw_path.resolve()
-    for project in configured_project_paths(registry):
-        if project.name == value or str(project).endswith(value):
+    projects = configured_project_paths(registry)
+    for project in projects:
+        if project.name == value:
+            return project.resolve()
+    suffix = "/" + raw_path.as_posix().strip("/")
+    for project in projects:
+        if project.as_posix().endswith(suffix):
             return project.resolve()
     return (Path.cwd() / raw_path).resolve()
 
