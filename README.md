@@ -115,6 +115,11 @@ portmanager sync /absolute/project/path
 portmanager run /absolute/project/path -- npm run dev
 ```
 
+A project argument can be an absolute path, `.`, a project folder name inside a
+configured root, or a trailing path such as `clients/web`. A name must match a
+whole folder name: `app` never selects `webapp`. `sync` and `run` stop with exit
+code 2 and write nothing when the project folder does not exist.
+
 Validate the registry:
 
 ```bash

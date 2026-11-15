@@ -447,8 +447,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     registry_path = _registry_path(args)
     registry = load_registry(registry_path)
     project = resolve_project_argument(registry, args.project)
-    if not project.is_dir():
-        print(f"ERROR: project folder not found: {args.project}", file=sys.stderr)
+    if not _require_project_dir(project, args.project, "portmanager sync <project>"):
         return 2
     if args.dry_run:
         print(project / ".portmanager" / "ports.env")
@@ -512,11 +511,11 @@ GETTING_STARTED = """getting started:
 """
 
 
-def _require_project_dir(project: Path, value: str) -> bool:
+def _require_project_dir(project: Path, value: str, usage: str) -> bool:
     if project.is_dir():
         return True
     print(f"ERROR: project folder not found: {value}", file=sys.stderr)
-    print("usage: portmanager run <project> -- <command>   (use . for this folder)", file=sys.stderr)
+    print(f"usage: {usage}   (use . for this folder)", file=sys.stderr)
     return False
 
 
@@ -529,7 +528,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
     registry = load_registry(_registry_path(args))
     project = resolve_project_argument(registry, args.project)
-    if not _require_project_dir(project, args.project):
+    if not _require_project_dir(project, args.project, "portmanager run <project> -- <command>"):
         return 2
     write_project_sync_files(registry, project)
     errors = validate_registry(registry, project_filter=project)
@@ -623,7 +622,11 @@ def cmd_completions(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw_args = sys.argv[1:] if argv is None else argv
+    if not raw_args:
+        parser.print_help(sys.stderr)
+        return 2
+    args = parser.parse_args(raw_args)
     if args.command == "init":
         return cmd_init(args)
     if args.command == "scan":

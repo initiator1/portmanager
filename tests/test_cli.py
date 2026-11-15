@@ -56,6 +56,19 @@ def test_run_with_command_but_no_project_does_not_create_a_folder(tmp_path, caps
     assert not (tmp_path / "echo").exists()
 
 
+def test_sync_with_missing_project_folder_prints_usage_and_writes_nothing(tmp_path, capsys, monkeypatch):
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+    monkeypatch.chdir(tmp_path)
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert main(["--registry", str(registry_path), "sync", "nope"]) == 2
+    err = capsys.readouterr().err
+    assert "project folder not found: nope" in err
+    assert "usage: portmanager sync <project>" in err
+    assert not (tmp_path / "nope").exists()
+
+
 def test_project_name_does_not_match_a_longer_folder_name(tmp_path, monkeypatch):
     (tmp_path / "webapp").mkdir()
     registry_path = tmp_path / "ports.toml"
@@ -70,6 +83,13 @@ def test_project_name_does_not_match_a_longer_folder_name(tmp_path, monkeypatch)
     assert registry_module.resolve_project_argument(registry, "webapp") == (tmp_path / "webapp").resolve()
     nested = tmp_path.name + "/webapp"
     assert registry_module.resolve_project_argument(registry, nested) == (tmp_path / "webapp").resolve()
+
+
+def test_bare_command_prints_help_with_getting_started(capsys):
+    assert main([]) == 2
+    err = capsys.readouterr().err
+    assert "getting started:" in err
+    assert "portmanager init" in err
 
 
 def test_run_missing_executable_reports_error(tmp_path, capsys, monkeypatch):
