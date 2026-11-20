@@ -1,7 +1,22 @@
 # Release Checklist
 
-Portmanager is not published yet. Use this checklist before the first public
-release and for every release after that.
+Portmanager v0.1.0 is published on GitHub Releases (2026-05-28), with source
+and wheel artifacts. Use this checklist for subsequent releases. PyPI
+publication is separate from GitHub publication.
+
+## v0.1.1 Changes
+
+- Fix `run` dispatch so a child command starts with the generated port settings.
+- Preserve child arguments, working directory, and exit code.
+- Report missing commands and missing executables without a traceback.
+- Add regression tests that launch a real child process.
+
+Local validation on 2026-10-02: all 59 tests pass on macOS with Python 3.13.
+A wheel installed into a fresh Python 3.12 environment passes eight checks:
+version, initialization, scanning, auto-assignment, sync, project validation,
+child environment/working directory, and child exit code. Source and wheel
+archives exclude private local registry artifacts. CI must pass on the final
+release commit before publication.
 
 ## Preflight
 
@@ -53,8 +68,9 @@ Tag pushes matching `v*` build the package, run tests, and create a GitHub
 release with the artifacts from `dist/`.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+# Use the new version from pyproject.toml, for example:
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Do not create a tag until the release commit is already pushed and CI is green.

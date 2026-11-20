@@ -1,11 +1,58 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 import portmanager.cli as cli_module
 import portmanager.registry as registry_module
 from portmanager.cli import main
+
+
+@pytest.mark.parametrize("separator", [[], ["--"]])
+def test_run_launches_child_with_project_environment_and_returns_exit_code(tmp_path, monkeypatch, separator):
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"scripts": {"dev": "vite --port 5190"}}))
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+    monkeypatch.setattr(cli_module, "load_listeners", lambda: {})
+    monkeypatch.setenv("PM_PORT_WEB", "wrong-parent-value")
+    monkeypatch.setenv("PORTMANAGER_TEST_PARENT", "inherited")
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    assert main(["--registry", str(registry_path), "adopt", str(project)]) == 0
+    child = (
+        "import json, os, pathlib, sys; "
+        "pathlib.Path('child.json').write_text(json.dumps({"
+        "'port': os.environ['PM_PORT_WEB'], 'url': os.environ['PM_URL_WEB'], "
+        "'parent': os.environ['PORTMANAGER_TEST_PARENT'], 'cwd': os.getcwd(), 'args': sys.argv[1:]})); "
+        "sys.exit(17)"
+    )
+    result = main(["--registry", str(registry_path), "run", str(project), *separator,
+                   sys.executable, "-c", child, "--child-flag", "value with spaces"])
+    assert result == 17
+    assert json.loads((project / "child.json").read_text()) == {
+        "port": "5190", "url": "http://127.0.0.1:5190", "parent": "inherited",
+        "cwd": str(project.resolve()), "args": ["--child-flag", "value with spaces"],
+    }
+
+
+@pytest.mark.parametrize("remainder", [[], ["--"]])
+def test_run_without_child_reports_error_without_writing_files(tmp_path, capsys, remainder):
+    assert main(["run", str(tmp_path), *remainder]) == 1
+    assert "no command supplied" in capsys.readouterr().err
+    assert not (tmp_path / ".portmanager").exists()
+
+
+def test_run_missing_executable_reports_error(tmp_path, capsys, monkeypatch):
+    registry_path = tmp_path / "ports.toml"
+    monkeypatch.setattr(registry_module, "load_listeners", lambda: {})
+    assert main(["--registry", str(registry_path), "init", "--root", str(tmp_path)]) == 0
+    assert main(["--registry", str(registry_path), "run", str(tmp_path), "--",
+                 str(tmp_path / "missing-executable")]) == 127
+    assert "command not found" in capsys.readouterr().err
 
 
 def test_init_creates_workspace_registry_and_generated_artifacts(tmp_path: Path, monkeypatch) -> None:

@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Load synced env and run a project command")
     run_parser.add_argument("project")
-    run_parser.add_argument("command", nargs=argparse.REMAINDER)
+    run_parser.add_argument("child_command", nargs=argparse.REMAINDER, metavar="command")
 
     roots_parser = subparsers.add_parser("roots", help="Manage discovery roots")
     roots_subparsers = roots_parser.add_subparsers(dest="roots_command", required=True)
@@ -498,6 +498,12 @@ def _load_env_file(path: Path) -> dict[str, str]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    command = args.child_command
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        print("ERROR: no command supplied", file=sys.stderr)
+        return 1
     registry = load_registry(_registry_path(args))
     project = resolve_project_argument(registry, args.project)
     write_project_sync_files(registry, project)
@@ -506,13 +512,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    if not args.command:
-        print("ERROR: no command supplied", file=sys.stderr)
-        return 1
-    command = args.command[1:] if args.command and args.command[0] == "--" else args.command
     env = os.environ.copy()
     env.update(_load_env_file(project / ".portmanager" / "ports.env"))
-    result = subprocess.run(command, cwd=project, env=env, check=False)
+    try:
+        result = subprocess.run(command, cwd=project, env=env, check=False)
+    except FileNotFoundError:
+        print(f"ERROR: command not found: {command[0]}", file=sys.stderr)
+        return 127
     return result.returncode
 
 
