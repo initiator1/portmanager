@@ -18,6 +18,8 @@ personal workstation.
 - Added atomic writes for registry, generated reports, sync files, and
   guardrail files.
 - Added GitHub Actions CI for Python 3.11, 3.12, and 3.13.
+- Added a monthly Dependabot `github-actions` update (one grouped PR) so the
+  commit-SHA action pins do not go stale.
 - Added a release checklist and demo workspace.
 - Added structured `doctor --json` validation errors for agent integrations.
 - Added scanner coverage for `[tool.portmanager.services]`, Makefile, Procfile,
